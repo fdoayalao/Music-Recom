@@ -367,7 +367,7 @@ if 'spotify_token' in st.session_state:
                 st.rerun()
 else:
     if get_auth_url:
-        st.sidebar.markdown(f'<a href="{get_auth_url()}" target="_top" style="display:block; background-color:#1DB954; color:white; padding:10px 15px; border-radius:100px; text-decoration:none; font-weight:bold; text-align:center; font-size:0.9rem;">🔌 Vincular Spotify</a>', unsafe_allow_html=True)
+        st.sidebar.markdown(f'<a href="{get_auth_url()}" target="_blank" style="display:block; background-color:#1DB954; color:white; padding:10px 15px; border-radius:100px; text-decoration:none; font-weight:bold; text-align:center; font-size:0.9rem;">🔌 Vincular Spotify</a>', unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
 
