@@ -302,7 +302,14 @@ def render_glass_table(df, show_index=True):
         if show_index:
             html += f'<td style="color: var(--accent); font-weight: bold;">{idx}</td>'
         for val in row:
-            html += f'<td>{val}</td>'
+            if isinstance(val, (int, float)):
+                if val == int(val):
+                    val_str = f"{int(val):,}".replace(",", ".")
+                else:
+                    val_str = f"{val:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                html += f'<td>{val_str}</td>'
+            else:
+                html += f'<td>{val}</td>'
         html += '</tr>'
     html += '</tbody></table></div>'
     st.markdown(html, unsafe_allow_html=True)
@@ -472,6 +479,8 @@ elif page == "Recomendador y Playlists":
             st.info("No tienes gemas olvidadas que cumplan este criterio.")
         else:
             gemas.index = range(1, len(gemas) + 1)
+            # Formatear la fecha para que no salga +00:00
+            gemas['Last_Played'] = gemas['Last_Played'].dt.strftime('%Y-%m-%d')
             render_glass_table(gemas[['artist_name', 'track_name', 'Total_Plays', 'Last_Played']])
             
             if st.button("Crear Playlist de Gemas Olvidadas en Spotify"):
