@@ -245,6 +245,45 @@ st.markdown("""
     .glass-table tr:hover td {
         background: rgba(255, 255, 255, 0.04);
     }
+
+    /* Responsividad para Celulares */
+    @media (max-width: 768px) {
+        h1, .st-emotion-cache-10trblm {
+            font-size: 1.8rem !important;
+        }
+        h2, h3 {
+            font-size: 1.4rem !important;
+        }
+        .rec-card {
+            padding: 16px;
+        }
+        .rec-title {
+            font-size: 1.25rem;
+            margin-right: 45px; /* Evita que el título choque con el número [01] */
+        }
+        .rec-number {
+            font-size: 1.3rem;
+            top: 16px;
+            right: 16px;
+        }
+        .rec-artist {
+            font-size: 0.95rem;
+        }
+        .rec-reason {
+            font-size: 0.85rem;
+            padding: 12px;
+        }
+        .glass-table th, .glass-table td {
+            padding: 10px;
+            font-size: 0.8rem;
+        }
+        .metric-card {
+            padding: 12px;
+        }
+        .metric-value {
+            font-size: 1.8rem;
+        }
+    }
 </style>
 """, unsafe_allow_html=True)
 
