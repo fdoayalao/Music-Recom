@@ -188,6 +188,23 @@ st.markdown("""
         box-shadow: 0 6px 20px rgba(56, 189, 248, 0.4) !important;
     }
 
+    /* Estilos para las Pestañas (Tabs) de Streamlit */
+    button[data-baseweb="tab"] > div[data-testid="stMarkdownContainer"] p {
+        font-family: 'Inter', sans-serif !important;
+        font-weight: 700 !important;
+        font-size: 1.05rem !important;
+    }
+    div[data-baseweb="tab-highlight"] {
+        background: linear-gradient(90deg, var(--accent-alt), var(--accent)) !important;
+        border-radius: 4px !important;
+        height: 3px !important;
+    }
+    button[data-baseweb="tab"][aria-selected="true"] > div[data-testid="stMarkdownContainer"] p {
+        background: linear-gradient(90deg, var(--accent-alt), var(--accent));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
     /* Diseño de Tablas Modernas (Glassmorphism) */
     .glass-table-container {
         overflow-x: auto;
