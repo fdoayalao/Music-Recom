@@ -187,11 +187,69 @@ st.markdown("""
         transform: scale(1.02) !important;
         box-shadow: 0 6px 20px rgba(56, 189, 248, 0.4) !important;
     }
+
+    /* Diseño de Tablas Modernas (Glassmorphism) */
+    .glass-table-container {
+        overflow-x: auto;
+        border-radius: 16px;
+        background: var(--bg-card);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid var(--border-color);
+        margin-bottom: 24px;
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+    }
+    .glass-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: 'Inter', sans-serif;
+        text-align: left;
+    }
+    .glass-table th {
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--text-sec);
+        font-weight: 700;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .glass-table td {
+        padding: 16px 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+        color: var(--text-main);
+        font-size: 0.95rem;
+        font-weight: 500;
+    }
+    .glass-table tr:last-child td {
+        border-bottom: none;
+    }
+    .glass-table tr:hover td {
+        background: rgba(255, 255, 255, 0.04);
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # DB path
 DB_PATH = "spotify_data.db"
+
+def render_glass_table(df, show_index=True):
+    html = '<div class="glass-table-container"><table class="glass-table"><thead><tr>'
+    if show_index:
+        html += '<th>#</th>'
+    for col in df.columns:
+        html += f'<th>{col}</th>'
+    html += '</tr></thead><tbody>'
+    for idx, row in df.iterrows():
+        html += '<tr>'
+        if show_index:
+            html += f'<td style="color: var(--accent); font-weight: bold;">{idx}</td>'
+        for val in row:
+            html += f'<td>{val}</td>'
+        html += '</tr>'
+    html += '</tbody></table></div>'
+    st.markdown(html, unsafe_allow_html=True)
 
 @st.cache_data
 def get_years():
@@ -283,7 +341,7 @@ if page == "Estadísticas":
         top_artists['Hours_Listened'] = top_artists['Hours_Listened'].round(1)
         top_artists.rename(columns={'artist_name': 'Artist', 'Play_Count': 'Streams', 'Hours_Listened': 'Hours Listened'}, inplace=True)
         top_artists.index = range(1, 51)
-        st.dataframe(top_artists, use_container_width=True)
+        render_glass_table(top_artists)
 
     with tab2:
         top_songs = ranking_df.groupby(['track_name', 'artist_name']).agg(
@@ -293,7 +351,7 @@ if page == "Estadísticas":
         top_songs['Hours_Listened'] = top_songs['Hours_Listened'].round(1)
         top_songs.rename(columns={'track_name': 'Song', 'artist_name': 'Artist', 'Play_Count': 'Streams', 'Hours_Listened': 'Hours Listened'}, inplace=True)
         top_songs.index = range(1, 51)
-        st.dataframe(top_songs, use_container_width=True)
+        render_glass_table(top_songs)
 
     with tab3:
         top_albums = ranking_df.groupby(['album_name', 'artist_name']).agg(
@@ -303,7 +361,7 @@ if page == "Estadísticas":
         top_albums['Hours_Listened'] = top_albums['Hours_Listened'].round(1)
         top_albums.rename(columns={'album_name': 'Album', 'artist_name': 'Artist', 'Play_Count': 'Streams', 'Hours_Listened': 'Hours Listened'}, inplace=True)
         top_albums.index = range(1, 51)
-        st.dataframe(top_albums, use_container_width=True)
+        render_glass_table(top_albums)
 
 elif page == "Recomendador y Playlists":
     st.header("✨ Recomendador Inteligente y Gemas Olvidadas")
@@ -359,7 +417,8 @@ elif page == "Recomendador y Playlists":
         if gemas.empty:
             st.info("No tienes gemas olvidadas que cumplan este criterio.")
         else:
-            st.dataframe(gemas[['artist_name', 'track_name', 'Total_Plays', 'Last_Played']], use_container_width=True)
+            gemas.index = range(1, len(gemas) + 1)
+            render_glass_table(gemas[['artist_name', 'track_name', 'Total_Plays', 'Last_Played']])
             
             if st.button("Crear Playlist de Gemas Olvidadas en Spotify"):
                 if create_spotify_playlist:
@@ -409,7 +468,7 @@ elif page == "Recomendador y Playlists":
         top_n.index = range(1, len(top_n) + 1)
             
         with st.expander(f"Ver tu Top {n_selection} de {base_type} ({selected_period})"):
-            st.dataframe(top_n[cols_to_show])
+            render_glass_table(top_n[cols_to_show])
             
         motor_options = {
             "RYM (Joyas de nicho y aclamación crítica)": "RYM",
