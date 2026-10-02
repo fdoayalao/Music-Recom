@@ -333,7 +333,7 @@ def load_data(year_filter="All Time"):
     return df
 
 # Main Header
-st.title("🎵 Spotify Analyzer & Recommender")
+st.title("Music Recommender")
 
 # Check if DB exists
 if not os.path.exists(DB_PATH):
@@ -420,8 +420,6 @@ if page == "Estadísticas":
         render_glass_table(top_albums)
 
 elif page == "Recomendador y Playlists":
-    st.header("✨ Recomendador Inteligente y Gemas Olvidadas")
-    
     # Credenciales Warning
     if not os.getenv("GEMINI_API_KEY") or not os.getenv("SPOTIPY_CLIENT_ID"):
         with st.expander("⚠️ Configuración de Credenciales Requerida (Haz click aquí)", expanded=True):
