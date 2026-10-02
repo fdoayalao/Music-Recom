@@ -19,8 +19,15 @@ try:
 except ImportError:
     create_spotify_playlist = None
     
+import zipfile
+
 # Set up page configuration (needs to be the first Streamlit command)
 st.set_page_config(page_title="My Spotify Stats", page_icon="🎵", layout="wide")
+
+# Extraer base de datos si está comprimida (para la nube)
+if not os.path.exists('spotify_data.db') and os.path.exists('spotify_data.zip'):
+    with zipfile.ZipFile('spotify_data.zip', 'r') as zip_ref:
+        zip_ref.extractall('.')
 
 # Manejo del Callback de Spotify (OAuth Web Flow)
 if "code" in st.query_params:
