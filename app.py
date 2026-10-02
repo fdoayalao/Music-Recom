@@ -45,25 +45,123 @@ if "code" in st.query_params:
 # Custom CSS for aesthetics
 st.markdown("""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=Space+Grotesk:wght@400;600;700&display=swap');
+
+    /* Variables de color según lineamientos */
+    :root {
+        --bg-main: #171615;
+        --bg-card: #21201D;
+        --border-color: #33302B;
+        --text-main: #F2EFE9;
+        --text-sec: #A8A398;
+        --accent: #E0A946;
+        --accent-alt: #C46242;
+    }
+
+    /* Fondo principal y tipografía general */
+    .stApp {
+        background-color: var(--bg-main) !important;
+        color: var(--text-main) !important;
+        font-family: 'Space Grotesk', sans-serif !important;
+    }
+
+    /* Encabezados editoriales */
+    h1, h2, h3, .st-emotion-cache-10trblm {
+        font-family: 'Lora', serif !important;
+        color: var(--text-main) !important;
+        font-weight: 600 !important;
+    }
+
+    /* Tarjetas de Métricas */
     .metric-card {
-        background-color: #1e1e1e;
-        border-radius: 10px;
+        background-color: var(--bg-card);
+        border-radius: 4px;
         padding: 20px;
         text-align: center;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        border: 1px solid #333;
+        border: 1px solid var(--border-color);
+        box-shadow: 4px 4px 0px rgba(0,0,0,0.3);
     }
     .metric-value {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #1db954;
+        font-family: 'Space Grotesk', sans-serif;
+        font-size: 2.2rem;
+        font-weight: 700;
+        color: var(--text-main);
     }
     .metric-label {
-        color: #b3b3b3;
-        font-size: 1rem;
+        font-family: 'Space Grotesk', sans-serif;
+        color: var(--text-sec);
+        font-size: 0.85rem;
         text-transform: uppercase;
-        letter-spacing: 1px;
-        margin-top: 5px;
+        letter-spacing: 2px;
+        margin-top: 8px;
+    }
+
+    /* Diseño de Tarjetas de Recomendación (Liner Notes Style) */
+    .rec-card {
+        background-color: var(--bg-card);
+        border: 1px solid var(--border-color);
+        padding: 24px;
+        margin-bottom: 20px;
+        border-radius: 2px;
+        position: relative;
+    }
+    .rec-number {
+        position: absolute;
+        top: 24px;
+        right: 24px;
+        font-family: 'Space Grotesk', sans-serif;
+        font-weight: 700;
+        color: var(--accent);
+        font-size: 1.1rem;
+    }
+    .rec-title {
+        font-family: 'Lora', serif;
+        font-size: 1.6rem;
+        font-weight: 600;
+        margin-bottom: 4px;
+        color: var(--text-main);
+    }
+    .rec-artist {
+        font-family: 'Space Grotesk', sans-serif;
+        font-size: 1.1rem;
+        color: var(--text-sec);
+        margin-bottom: 16px;
+    }
+    .rec-pills {
+        font-family: 'Space Grotesk', sans-serif;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        color: var(--accent);
+        margin-bottom: 16px;
+    }
+    .rec-reason {
+        background-color: #1C1B19;
+        border-left: 3px solid var(--accent-alt);
+        padding: 16px;
+        font-family: 'Lora', serif;
+        font-style: italic;
+        color: var(--text-main);
+        font-size: 1rem;
+        line-height: 1.6;
+    }
+
+    /* Botones generales (incluye Spotify) */
+    .stButton > button {
+        background-color: var(--accent) !important;
+        color: #171615 !important;
+        font-family: 'Space Grotesk', sans-serif !important;
+        font-weight: 600 !important;
+        border-radius: 2px !important;
+        border: none !important;
+        padding: 10px 24px !important;
+        text-transform: uppercase !important;
+        letter-spacing: 1px !important;
+        transition: all 0.2s ease !important;
+    }
+    .stButton > button:hover {
+        background-color: var(--text-main) !important;
+        color: #171615 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -115,7 +213,7 @@ period_options = ["All Time"] + [str(y) for y in available_years]
 selected_period = st.sidebar.selectbox("Selecciona un período", period_options)
 st.sidebar.markdown("---")
 
-page = st.sidebar.radio("Navegación", ["Estadísticas", "Recomendador y Playlists"])
+page = st.sidebar.radio("Navegación", ["Recomendador y Playlists", "Estadísticas"])
 st.sidebar.markdown("---")
 
 if page == "Estadísticas":
@@ -318,10 +416,23 @@ elif page == "Recomendador y Playlists":
                 
         if 'current_recs' in st.session_state:
             st.markdown(f"### Resultados (Motor: {st.session_state.get('current_motor', '')})")
+            motor = st.session_state.get('current_motor', '')
             for idx, rec in enumerate(st.session_state['current_recs']):
-                st.markdown(f"**{idx+1}. {rec.get('artist', 'Desconocido')} - {rec.get('item', 'Desconocido')}**")
-                st.markdown(f"_{rec.get('reason', '')}_")
-                st.markdown("---")
+                artist = rec.get('artist', 'Desconocido')
+                track = rec.get('item', 'Desconocido')
+                reason = rec.get('reason', '')
+                
+                # HTML template para la tarjeta de recomendación
+                card_html = f"""
+                <div class="rec-card">
+                    <div class="rec-number">[{str(idx+1).zfill(2)}]</div>
+                    <div class="rec-title">{track}</div>
+                    <div class="rec-artist">por {artist}</div>
+                    <div class="rec-pills">/ MOTOR: {motor} /</div>
+                    <div class="rec-reason">"{reason}"</div>
+                </div>
+                """
+                st.markdown(card_html, unsafe_allow_html=True)
                 
             if create_spotify_playlist:
                 if 'spotify_token' not in st.session_state:
