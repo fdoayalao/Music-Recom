@@ -49,7 +49,7 @@ st.markdown("""
 
     /* Variables de color Glassmorphism */
     :root {
-        --bg-main: #0a0a0a;
+        --bg-main: #0B0F19; /* Un azul/gris medianoche ultra oscuro, no 100% negro */
         --bg-card: rgba(255, 255, 255, 0.03);
         --border-color: rgba(255, 255, 255, 0.08);
         --text-main: #ffffff;
@@ -60,8 +60,8 @@ st.markdown("""
 
     /* Fondo principal y tipografía general */
     .stApp {
-        background: radial-gradient(circle at 15% 50%, rgba(192, 132, 252, 0.08), transparent 25%),
-                    radial-gradient(circle at 85% 30%, rgba(56, 189, 248, 0.08), transparent 25%),
+        background: radial-gradient(circle at 15% 50%, rgba(192, 132, 252, 0.12), transparent 40%),
+                    radial-gradient(circle at 85% 30%, rgba(56, 189, 248, 0.12), transparent 40%),
                     var(--bg-main) !important;
         color: var(--text-main) !important;
         font-family: 'Inter', sans-serif !important;
