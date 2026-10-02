@@ -356,7 +356,7 @@ available_years = get_years()
 # Sidebar Navigation
 st.sidebar.image("https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/Spotify_Logo_RGB_Green.png", width=150)
 
-st.sidebar.markdown("### 🔴 Live Data")
+st.sidebar.markdown("### ⚡ Live Sync")
 if 'spotify_token' in st.session_state:
     if st.sidebar.button("🔄 Sincronizar reproducciones recientes"):
         if sync_recently_played_to_db:
