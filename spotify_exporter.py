@@ -14,7 +14,7 @@ def get_spotify_oauth():
     if not client_id or not client_secret:
         raise ValueError("Faltan las credenciales de Spotify")
 
-    scope = "playlist-modify-public playlist-modify-private playlist-read-private"
+    scope = "playlist-modify-public playlist-modify-private playlist-read-private user-read-recently-played user-read-currently-playing"
     
     return SpotifyOAuth(
         client_id=client_id,
@@ -30,6 +30,86 @@ def get_auth_url():
 
 def get_token(code):
     return get_spotify_oauth().get_access_token(code, as_dict=True)
+
+def get_currently_playing(token_info):
+    """
+    Returns the currently playing track if any, else None.
+    """
+    sp = spotipy.Spotify(auth=token_info['access_token'])
+    try:
+        current = sp.current_user_playing_track()
+        if current and current.get('is_playing') and current.get('item'):
+            track = current['item']
+            return {
+                'track_name': track['name'],
+                'artist_name': track['artists'][0]['name'],
+                'album_name': track['album']['name'],
+                'cover_url': track['album']['images'][0]['url'] if track['album']['images'] else None,
+                'url': track['external_urls'].get('spotify', '#')
+            }
+    except Exception:
+        pass
+    return None
+
+def sync_recently_played_to_db(token_info, db_path):
+    """
+    Fetches the 50 most recently played tracks and inserts them into SQLite.
+    Returns the number of new tracks added.
+    """
+    import sqlite3
+    import pandas as pd
+    
+    sp = spotipy.Spotify(auth=token_info['access_token'])
+    try:
+        recent = sp.current_user_recently_played(limit=50)
+    except Exception as e:
+        print("Error fetching recent tracks:", e)
+        return 0
+        
+    if not recent or 'items' not in recent:
+        return 0
+        
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    new_tracks_count = 0
+    
+    for item in recent['items']:
+        played_at_iso = item['played_at']
+        track = item['track']
+        
+        # Convierte el ISO 8601 al formato de base de datos usando pandas para asegurar homogeneidad
+        ts = pd.to_datetime(played_at_iso).strftime('%Y-%m-%d %H:%M:%S+00:00')
+        year = pd.to_datetime(played_at_iso).year
+        
+        track_uri = track['uri']
+        track_name = track['name']
+        artist_name = track['artists'][0]['name']
+        album_name = track['album']['name']
+        
+        # Spotify recently played doesn't return exactly ms_played by the user,
+        # but we use the track's duration since it's fully registered as played.
+        ms_played = track['duration_ms']
+        minutes_played = ms_played / 60000.0
+        hours_played = ms_played / 3600000.0
+        
+        # Check if this exact reproduction already exists
+        cursor.execute("SELECT COUNT(*) FROM spotify_history WHERE track_uri = ? AND ts = ?", (track_uri, ts))
+        exists = cursor.fetchone()[0]
+        
+        if not exists:
+            # We must match the schema exactly:
+            # ts, year, ms_played, minutes_played, hours_played, track_name, artist_name, album_name, track_uri
+            cursor.execute('''
+                INSERT INTO spotify_history 
+                (ts, year, ms_played, minutes_played, hours_played, track_name, artist_name, album_name, track_uri)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (ts, year, ms_played, minutes_played, hours_played, track_name, artist_name, album_name, track_uri))
+            new_tracks_count += 1
+            
+    conn.commit()
+    conn.close()
+    return new_tracks_count
 
 def create_spotify_playlist(playlist_name, description, tracks_info, token_info):
     """

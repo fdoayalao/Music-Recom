@@ -15,9 +15,13 @@ except ImportError:
     get_recommendations = None
 
 try:
-    from spotify_exporter import create_spotify_playlist, get_auth_url, get_token
+    from spotify_exporter import create_spotify_playlist, get_auth_url, get_token, get_currently_playing, sync_recently_played_to_db
 except ImportError:
     create_spotify_playlist = None
+    get_auth_url = None
+    get_token = None
+    get_currently_playing = None
+    sync_recently_played_to_db = None
     
 import zipfile
 
@@ -352,6 +356,21 @@ available_years = get_years()
 # Sidebar Navigation
 st.sidebar.image("https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/Spotify_Logo_RGB_Green.png", width=150)
 
+st.sidebar.markdown("### 🔴 Live Data")
+if 'spotify_token' in st.session_state:
+    if st.sidebar.button("🔄 Sincronizar reproducciones recientes"):
+        if sync_recently_played_to_db:
+            with st.spinner("Sincronizando con Spotify..."):
+                added = sync_recently_played_to_db(st.session_state['spotify_token'], DB_PATH)
+                st.cache_data.clear()
+                st.sidebar.success(f"¡Sincronización completa! {added} nuevas reproducciones agregadas.")
+                st.rerun()
+else:
+    if get_auth_url:
+        st.sidebar.markdown(f'<a href="{get_auth_url()}" target="_self" style="display:inline-block; background-color:#1DB954; color:white; padding:10px 15px; border-radius:100px; text-decoration:none; font-weight:bold;">Conectar a Spotify para Sincronizar</a>', unsafe_allow_html=True)
+
+st.sidebar.markdown("---")
+
 # Global Filters
 st.sidebar.header("Filtros Globales")
 period_options = ["All Time"] + [str(y) for y in available_years]
@@ -362,6 +381,24 @@ page = st.sidebar.radio("Navegación", ["Recomendador y Playlists", "Estadístic
 st.sidebar.markdown("---")
 
 if page == "Estadísticas":
+    if 'spotify_token' in st.session_state and get_currently_playing:
+        now_playing = get_currently_playing(st.session_state['spotify_token'])
+        if now_playing:
+            st.markdown(f"""
+            <div style="display: flex; align-items: center; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 12px; padding: 12px; margin-bottom: 24px; animation: pulse 2s infinite;">
+                <img src="{now_playing['cover_url']}" style="width: 50px; height: 50px; border-radius: 50%; border: 2px solid #38bdf8; margin-right: 16px; animation: spin 4s linear infinite;">
+                <div>
+                    <div style="font-size: 0.75rem; color: #38bdf8; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">Escuchando Ahora</div>
+                    <div style="font-weight: bold; font-size: 1.1rem; color: white;">{now_playing['track_name']}</div>
+                    <div style="font-size: 0.9rem; color: #a1a1aa;">{now_playing['artist_name']}</div>
+                </div>
+            </div>
+            <style>
+                @keyframes spin {{ 100% {{ transform: rotate(360deg); }} }}
+                @keyframes pulse {{ 0% {{ box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.4); }} 70% {{ box-shadow: 0 0 0 10px rgba(56, 189, 248, 0); }} 100% {{ box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }} }}
+            </style>
+            """, unsafe_allow_html=True)
+
     st.sidebar.markdown("### About")
     st.sidebar.info("Dashboard of your extended Spotify streaming history (>30 seconds).")
 
