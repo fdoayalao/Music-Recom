@@ -553,10 +553,10 @@ elif page == "Recomendador y Playlists":
             cols_to_show = ['artist_name', 'Minutes_Listened', 'Unique_Tracks']
         elif base_type == "Canciones":
             grouped = df.groupby(['track_name', 'artist_name']).agg(
-                Minutes_Listened=('minutes_played', 'sum')
+                Play_Count=('ts', 'count')
             ).reset_index()
-            top_n = grouped.sort_values(by='Minutes_Listened', ascending=False).head(n_selection)
-            cols_to_show = ['track_name', 'artist_name', 'Minutes_Listened']
+            top_n = grouped.sort_values(by='Play_Count', ascending=False).head(n_selection)
+            cols_to_show = ['track_name', 'artist_name', 'Play_Count']
         else: # Álbumes
             grouped = df.groupby(['album_name', 'artist_name']).agg(
                 Minutes_Listened=('minutes_played', 'sum')
