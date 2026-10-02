@@ -12,8 +12,8 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10):
         
     genai.configure(api_key=api_key)
     
-    # We use a stable model like gemini-flash-latest
-    model = genai.GenerativeModel('gemini-flash-latest')
+    # Usamos la versión Flash porque la cuenta es gratuita y Pro es muy restrictiva
+    model = genai.GenerativeModel('gemini-3.5-flash')
 
     # Prepare user profile
     n_count = len(top_df)
