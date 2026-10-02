@@ -542,14 +542,11 @@ elif page == "Recomendador y Playlists":
             n_selection = st.selectbox("Cantidad a analizar (N):", [15, 30, 50, 100])
         
         if base_type == "Artistas":
-            # Calculate Top 15 Deep Listening Artists
             grouped = df.groupby('artist_name').agg(
-                Minutes_Listened=('minutes_played', 'sum'),
-                Unique_Tracks=('track_name', 'nunique')
+                Play_Count=('ts', 'count')
             ).reset_index()
-            grouped['Deep_Score'] = grouped['Minutes_Listened'] * grouped['Unique_Tracks']
-            top_n = grouped.sort_values(by='Deep_Score', ascending=False).head(n_selection)
-            cols_to_show = ['artist_name', 'Minutes_Listened', 'Unique_Tracks']
+            top_n = grouped.sort_values(by='Play_Count', ascending=False).head(n_selection)
+            cols_to_show = ['artist_name', 'Play_Count']
         elif base_type == "Canciones":
             grouped = df.groupby(['track_name', 'artist_name']).agg(
                 Play_Count=('ts', 'count')
@@ -558,10 +555,10 @@ elif page == "Recomendador y Playlists":
             cols_to_show = ['track_name', 'artist_name', 'Play_Count']
         else: # Álbumes
             grouped = df.groupby(['album_name', 'artist_name']).agg(
-                Minutes_Listened=('minutes_played', 'sum')
+                Play_Count=('ts', 'count')
             ).reset_index()
-            top_n = grouped.sort_values(by='Minutes_Listened', ascending=False).head(n_selection)
-            cols_to_show = ['album_name', 'artist_name', 'Minutes_Listened']
+            top_n = grouped.sort_values(by='Play_Count', ascending=False).head(n_selection)
+            cols_to_show = ['album_name', 'artist_name', 'Play_Count']
             
         # Hacer que el índice sea un ranking (1, 2, 3...)
         top_n.index = range(1, len(top_n) + 1)
