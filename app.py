@@ -45,123 +45,147 @@ if "code" in st.query_params:
 # Custom CSS for aesthetics
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=Space+Grotesk:wght@400;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-    /* Variables de color según lineamientos */
+    /* Variables de color Glassmorphism */
     :root {
-        --bg-main: #171615;
-        --bg-card: #21201D;
-        --border-color: #33302B;
-        --text-main: #F2EFE9;
-        --text-sec: #A8A398;
-        --accent: #E0A946;
-        --accent-alt: #C46242;
+        --bg-main: #0a0a0a;
+        --bg-card: rgba(255, 255, 255, 0.03);
+        --border-color: rgba(255, 255, 255, 0.08);
+        --text-main: #ffffff;
+        --text-sec: #a1a1aa;
+        --accent: #38bdf8;
+        --accent-alt: #c084fc;
     }
 
     /* Fondo principal y tipografía general */
     .stApp {
-        background-color: var(--bg-main) !important;
+        background: radial-gradient(circle at 15% 50%, rgba(192, 132, 252, 0.08), transparent 25%),
+                    radial-gradient(circle at 85% 30%, rgba(56, 189, 248, 0.08), transparent 25%),
+                    var(--bg-main) !important;
         color: var(--text-main) !important;
-        font-family: 'Space Grotesk', sans-serif !important;
+        font-family: 'Inter', sans-serif !important;
     }
 
-    /* Encabezados editoriales */
+    /* Encabezados */
     h1, h2, h3, .st-emotion-cache-10trblm {
-        font-family: 'Lora', serif !important;
+        font-family: 'Inter', sans-serif !important;
         color: var(--text-main) !important;
-        font-weight: 600 !important;
+        font-weight: 800 !important;
+        letter-spacing: -0.5px !important;
     }
 
     /* Tarjetas de Métricas */
     .metric-card {
-        background-color: var(--bg-card);
-        border-radius: 4px;
-        padding: 20px;
+        background: var(--bg-card);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-radius: 16px;
+        padding: 24px;
         text-align: center;
         border: 1px solid var(--border-color);
-        box-shadow: 4px 4px 0px rgba(0,0,0,0.3);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.2);
     }
     .metric-value {
-        font-family: 'Space Grotesk', sans-serif;
-        font-size: 2.2rem;
-        font-weight: 700;
-        color: var(--text-main);
+        font-family: 'Inter', sans-serif;
+        font-size: 2.5rem;
+        font-weight: 800;
+        background: linear-gradient(90deg, var(--accent-alt), var(--accent));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
     }
     .metric-label {
-        font-family: 'Space Grotesk', sans-serif;
+        font-family: 'Inter', sans-serif;
         color: var(--text-sec);
-        font-size: 0.85rem;
+        font-size: 0.8rem;
         text-transform: uppercase;
         letter-spacing: 2px;
         margin-top: 8px;
+        font-weight: 600;
     }
 
-    /* Diseño de Tarjetas de Recomendación (Liner Notes Style) */
+    /* Diseño de Tarjetas de Recomendación (Glassmorphism) */
     .rec-card {
-        background-color: var(--bg-card);
+        background: var(--bg-card);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
         border: 1px solid var(--border-color);
         padding: 24px;
-        margin-bottom: 20px;
-        border-radius: 2px;
+        margin-bottom: 24px;
+        border-radius: 16px;
         position: relative;
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        transition: transform 0.3s ease, border-color 0.3s ease;
+    }
+    .rec-card:hover {
+        transform: translateY(-4px);
+        border-color: rgba(56, 189, 248, 0.3);
     }
     .rec-number {
         position: absolute;
         top: 24px;
         right: 24px;
-        font-family: 'Space Grotesk', sans-serif;
-        font-weight: 700;
-        color: var(--accent);
-        font-size: 1.1rem;
+        font-family: 'Inter', sans-serif;
+        font-weight: 800;
+        color: rgba(255, 255, 255, 0.1);
+        font-size: 2rem;
+        line-height: 1;
     }
     .rec-title {
-        font-family: 'Lora', serif;
-        font-size: 1.6rem;
-        font-weight: 600;
+        font-family: 'Inter', sans-serif;
+        font-size: 1.5rem;
+        font-weight: 700;
         margin-bottom: 4px;
         color: var(--text-main);
+        letter-spacing: -0.5px;
     }
     .rec-artist {
-        font-family: 'Space Grotesk', sans-serif;
+        font-family: 'Inter', sans-serif;
         font-size: 1.1rem;
+        font-weight: 500;
         color: var(--text-sec);
         margin-bottom: 16px;
     }
     .rec-pills {
-        font-family: 'Space Grotesk', sans-serif;
-        font-size: 0.75rem;
+        font-family: 'Inter', sans-serif;
+        font-size: 0.7rem;
+        font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 1.5px;
         color: var(--accent);
         margin-bottom: 16px;
+        display: inline-block;
+        background: rgba(56, 189, 248, 0.1);
+        padding: 4px 10px;
+        border-radius: 100px;
     }
     .rec-reason {
-        background-color: #1C1B19;
-        border-left: 3px solid var(--accent-alt);
+        background: rgba(255, 255, 255, 0.02);
+        border-left: 2px solid var(--accent-alt);
         padding: 16px;
-        font-family: 'Lora', serif;
-        font-style: italic;
-        color: var(--text-main);
-        font-size: 1rem;
+        border-radius: 0 8px 8px 0;
+        font-family: 'Inter', sans-serif;
+        color: #e4e4e7;
+        font-size: 0.95rem;
         line-height: 1.6;
     }
 
     /* Botones generales (incluye Spotify) */
     .stButton > button {
-        background-color: var(--accent) !important;
-        color: #171615 !important;
-        font-family: 'Space Grotesk', sans-serif !important;
-        font-weight: 600 !important;
-        border-radius: 2px !important;
+        background: linear-gradient(90deg, var(--accent-alt), var(--accent)) !important;
+        color: #ffffff !important;
+        font-family: 'Inter', sans-serif !important;
+        font-weight: 700 !important;
+        border-radius: 100px !important;
         border: none !important;
-        padding: 10px 24px !important;
-        text-transform: uppercase !important;
-        letter-spacing: 1px !important;
-        transition: all 0.2s ease !important;
+        padding: 12px 28px !important;
+        letter-spacing: 0.5px !important;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 4px 15px rgba(192, 132, 252, 0.3) !important;
     }
     .stButton > button:hover {
-        background-color: var(--text-main) !important;
-        color: #171615 !important;
+        transform: scale(1.02) !important;
+        box-shadow: 0 6px 20px rgba(56, 189, 248, 0.4) !important;
     }
 </style>
 """, unsafe_allow_html=True)
