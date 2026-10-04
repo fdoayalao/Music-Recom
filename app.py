@@ -589,8 +589,11 @@ elif page == "Recomendador y Playlists":
         
         if st.button("Generar Recomendaciones con Gemini"):
             if get_recommendations:
-                with st.spinner("Gemini está analizando tu perfil..."):
-                    recs = get_recommendations(top_n, motor, base_type)
+                with st.spinner("Gemini está analizando tu perfil y cruzando con tu historial (esto puede tomar unos segundos)..."):
+                    lista_historica = df['artist_name'].dropna().unique().tolist()
+                    lista_2026 = df[df['year'] == 2026]['artist_name'].dropna().unique().tolist()
+                    
+                    recs = get_recommendations(top_n, motor, base_type, num_recommendations=10, artistas_historicos=lista_historica, artistas_2026=lista_2026)
                     if recs:
                         st.session_state['current_recs'] = recs
                         st.session_state['current_motor'] = motor
@@ -607,11 +610,21 @@ elif page == "Recomendador y Playlists":
                 artist = rec.get('artist', 'Desconocido')
                 track = rec.get('item', 'Desconocido')
                 reason = rec.get('reason', '')
+                badge = rec.get('badge', '')
+                
+                badge_html = ""
+                if badge:
+                    badge_color = "#38bdf8"
+                    if "RECONEXIÓN" in badge: badge_color = "#c084fc"
+                    elif "LADO B" in badge: badge_color = "#f59e0b"
+                    
+                    badge_html = f'<div style="display:inline-block; background-color:{badge_color}15; color:{badge_color}; border: 1px solid {badge_color}50; padding: 4px 10px; border-radius: 20px; font-size: 0.65rem; font-weight: 800; letter-spacing: 0.5px; margin-bottom: 8px;">{badge}</div>'
                 
                 # HTML template para la tarjeta de recomendación
                 card_html = f"""
                 <div class="rec-card">
                     <div class="rec-number">[{str(idx+1).zfill(2)}]</div>
+                    {badge_html}
                     <div class="rec-title">{track}</div>
                     <div class="rec-artist">por {artist}</div>
                     <div class="rec-pills">/ MOTOR: {motor} /</div>

@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def get_recommendations(top_df, engine, base_type, num_recommendations=10):
+def get_recommendations(top_df, engine, base_type, num_recommendations=10, artistas_historicos=None, artistas_2026=None):
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("No Gemini API key found. Please add GEMINI_API_KEY to your .env file.")
@@ -27,24 +27,36 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10):
         items_list = top_df.apply(lambda row: f"{row['album_name']} by {row['artist_name']}", axis=1).tolist()
         user_profile = f"Top {n_count} Albums: " + ", ".join(items_list)
     
+    # Prepare history lists
+    hist_str = ", ".join(artistas_historicos) if artistas_historicos else "Ninguno"
+    hist_2026_str = ", ".join(artistas_2026) if artistas_2026 else "Ninguno"
+
     # Define the persona based on the engine
     if engine == "RYM":
-        persona = """
+        persona = f"""
         Rol: Eres un curador experto en el canon de RateYourMusic.
-        Criterio: Debes recomendar discos de culto con rating alto (> 3.65/5.0) pero con menos de 8.000 votos (para evitar discos universalmente obvios).
-        Instrucción: Extrae microgéneros y descriptores de sonido exactos de RYM (ej: sophisti-pop, lush, warm bassline, groovy, city pop) a partir de la música más escuchada del usuario.
+        Enfoque: Curaduría de culto, underground y alta aclamación crítica (rating > 3.65 en RYM con pocos votos globales).
+        REGLA DE NOVEDAD ABSOLUTA: Está TERMINANTEMENTE PROHIBIDO recomendar a cualquier artista que figure en la siguiente lista de mi historial:
+        [HISTORIAL PROHIBIDO]: {hist_str}
+        Deben ser 100% descubrimientos inéditos para mí.
         """
-        reason_example = "Microgénero: [microgénero]. Álbum de culto: [Álbum]. Recomendado porque te gusta [tu artista]."
+        reason_example = "Microgénero: [microgénero exacto de RYM]. Álbum de culto: [Álbum]."
     elif engine == "Last.fm":
-        persona = """
+        persona = f"""
         Rol: Eres el algoritmo de similitud de audiencia profunda de Last.fm.
-        Criterio: Debes recomendar artistas de nicho de la misma escena, circuito independiente o época que comparten la misma base de oyentes que los artistas del usuario. Debes evitar rotundamente los "top similar" comerciales y directos.
+        Enfoque: Puntos ciegos y consenso de audiencia. Puede incluir artistas populares, clásicos o mainstream que sean referentes directos.
+        CONDICIÓN DE AUDIENCIA:
+        - Prioridad 1: Referentes que NUNCA he escuchado. NO deben estar en esta lista: [HISTORIAL GENERAL]: {hist_str}
+        - Prioridad 2: Artistas que he escuchado antes, pero NO en 2026. NO deben estar en esta lista: [HISTORIAL 2026]: {hist_2026_str}
+        - PROHIBIDO: Recomendar artistas que ya escuché en 2026 (los que están en [HISTORIAL 2026]).
         """
-        reason_example = "Escena/Época: [escena]. Conecta profundamente a nivel de audiencia con [tu artista]."
+        reason_example = "Conexión de audiencia: [Un referente clave para los fans de tu top que aún no exploras, o un clásico que no escuchas desde hace años]."
     elif engine == "Discogs":
-        persona = """
+        persona = f"""
         Rol: Eres un archivista e ingeniero de audio enfocado en los créditos de Discogs.
-        Criterio: NO recomiendes por género. Recomienda estrictamente por conexiones de producción: mismo productor, ingeniero de mezcla, músicos de sesión destacados (bajo, batería, teclados) o sellos discográficos independientes afines.
+        Enfoque: Letra chica técnica. Conexiones por productores, ingenieros de sonido, sellos independientes o músicos de sesión.
+        REGLA DE PROFUNDIDAD: NO puedes sugerir NADA de lo escuchado en 2026: [HISTORIAL 2026]: {hist_2026_str}
+        Si recomiendas a alguien que está en mi historial general ([HISTORIAL GENERAL]: {hist_str}), debe ser OBLIGATORIAMENTE un lado B, rareza, colaboración o proyecto paralelo conectado por créditos. NUNCA sus discos obvios.
         """
         reason_example = "Año: [año]. Conexión: [Crédito exacto, ej: Producido por X / Mismo bajista de sesión que grabó en Y]."
     else:
@@ -54,17 +66,21 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10):
     prompt = f"""
     {persona}
     
-    The user's taste is represented by:
+    Mis preferencias actuales son:
     {user_profile}
     
-    Based on these, generate a list of exactly {num_recommendations} highly relevant music recommendations that the user has likely NOT discovered yet.
+    Con base en estas reglas, genera una lista de exactamente {num_recommendations} recomendaciones musicales altamente relevantes.
     
-    IMPORTANT: You must always recommend a specific song in the 'item' field, even if your main recommendation is an artist or an album, because we will add this to a Spotify playlist.
+    IMPORTANTE: Siempre recomienda una canción específica en el campo 'item'.
     
-    Return the output STRICTLY as a JSON array of objects with the following keys:
-    - "artist": The name of the recommended artist.
-    - "item": The name of the recommended song.
-    - "reason": A short 1-sentence explanation of "Por qué te lo recomendamos" (in Spanish), strictly following the focus of your persona. Example format: "{reason_example}"
+    Devuelve la salida ESTRICTAMENTE como un JSON array de objetos con las siguientes claves:
+    - "artist": El nombre del artista.
+    - "item": El nombre de la canción.
+    - "reason": Una explicación corta en español basada en tu rol. Ejemplo: "{reason_example}"
+    - "badge": Una etiqueta visual. Elige EXACTAMENTE UNA de estas 3 opciones dependiendo del caso:
+        1. "[NUEVO DESCUBRIMIENTO]" (si el artista no estaba en mi [HISTORIAL GENERAL])
+        2. "[RECONEXIÓN: No escuchado en 2026]" (si es un artista de mi pasado que no está en [HISTORIAL 2026])
+        3. "[LADO B / CRÉDITOS]" (si es una rareza de un artista conocido vía Discogs).
     
     Do not output any markdown formatting like ```json or anything else. Just the raw JSON array.
     """
