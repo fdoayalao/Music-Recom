@@ -22,7 +22,7 @@ def get_spotify_oauth():
         redirect_uri=redirect_uri,
         scope=scope,
         open_browser=False,
-        cache_handler=spotipy.cache_handler.MemoryCacheHandler()
+        cache_handler=spotipy.cache_handler.CacheFileHandler(cache_path=".spotify_cache")
     )
 
 def get_auth_url():
@@ -30,6 +30,9 @@ def get_auth_url():
 
 def get_token(code):
     return get_spotify_oauth().get_access_token(code, as_dict=True)
+
+def get_cached_token():
+    return get_spotify_oauth().get_cached_token()
 
 def get_currently_playing(token_info):
     """

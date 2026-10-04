@@ -15,13 +15,14 @@ except ImportError:
     get_recommendations = None
 
 try:
-    from spotify_exporter import create_spotify_playlist, get_auth_url, get_token, get_currently_playing, sync_recently_played_to_db
+    from spotify_exporter import create_spotify_playlist, get_auth_url, get_token, get_currently_playing, sync_recently_played_to_db, get_cached_token
 except ImportError:
     create_spotify_playlist = None
     get_auth_url = None
     get_token = None
     get_currently_playing = None
     sync_recently_played_to_db = None
+    get_cached_token = None
     
 import zipfile
 
@@ -45,6 +46,12 @@ if "code" in st.query_params:
             st.success("¡Autenticado con Spotify exitosamente!")
     except Exception as e:
         st.error(f"Error al iniciar sesión en Spotify: {e}")
+
+# Intento de cargar token persistente desde la caché si no hay uno en sesión
+if 'spotify_token' not in st.session_state and get_cached_token:
+    cached = get_cached_token()
+    if cached:
+        st.session_state['spotify_token'] = cached
 
 # Custom CSS for aesthetics
 st.markdown("""
