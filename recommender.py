@@ -11,7 +11,8 @@ def get_lastfm_similar_artists(artists_list, api_key, hist_lower, limit=50):
     similar_artists = {} # artist_name: score
     for artist in artists_list[:5]: # Top 5 para no saturar la API
         try:
-            url = f"http://ws.audioscrobbler.com/2.0/?method=artist.getsimilar&artist={requests.utils.quote(artist)}&api_key={api_key}&format=json&limit=20"
+            # Pedimos hasta 100 artistas similares para tener mucha profundidad
+            url = f"http://ws.audioscrobbler.com/2.0/?method=artist.getsimilar&artist={requests.utils.quote(artist)}&api_key={api_key}&format=json&limit=100"
             resp = requests.get(url, timeout=5)
             if resp.status_code == 200:
                 data = resp.json()
@@ -19,12 +20,16 @@ def get_lastfm_similar_artists(artists_list, api_key, hist_lower, limit=50):
                 for i, sim in enumerate(similars):
                     name = sim.get('name')
                     if name:
-                        score = 20 - i
+                        score = 100 - i
                         similar_artists[name] = similar_artists.get(name, 0) + score
         except Exception as e:
             continue
             
     sorted_similars = sorted(similar_artists.items(), key=lambda x: x[1], reverse=True)
+    
+    # TRUCO: Descartamos de plano a los 40 más evidentes (los más famosos) para obligar a escarbar
+    if len(sorted_similars) > 40:
+        sorted_similars = sorted_similars[40:]
     
     def normalize_name(name):
         n = str(name).lower().strip()
@@ -112,8 +117,8 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
         
         TU TAREA:
         Selecciona estrictamente a los artistas de esta lista [ARTISTAS SIMILARES DE LAST.FM] para crear tus recomendaciones.
-        REGLA DE OBSCUREZA: Para garantizar que el usuario descubra música nueva (ya que suele conocer a los artistas muy famosos), el 80% de tus selecciones DEBEN ser artistas de nicho, independientes, emergentes o menos conocidos dentro de la lista. Evita a los gigantes obvios.
-        Extrae una canción representativa para cada artista elegido.
+        REGLA DE OBSCUREZA EXTREMA: El usuario es un melómano que ya conoce a todas las bandas famosas. Todos los artistas que elijas deben ser descubrimientos frescos.
+        REGLA DE CANCIÓN: Bajo NINGÚN MOTIVO recomiendes la canción más escuchada de la banda. Debes recomendar obligatoriamente un "Lado B" o una canción oculta/profunda de la discografía del artista.
         """
         reason_example = "Conexión de Last.fm: [Explicación basada en la similitud matemática de audiencia de Last.fm]."
     elif engine == "Discogs":
