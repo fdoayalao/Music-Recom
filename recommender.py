@@ -99,8 +99,8 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
             
         hist_lower = set([normalize_name(a) for a in artistas_historicos]) if artistas_historicos else set()
         
-        # RAG CALL
-        rag_similar = get_lastfm_similar_artists(base_artists, lastfm_api_key, hist_lower, limit=40)
+        # RAG CALL (Extraemos hasta 80 artistas para tener un pool profundo)
+        rag_similar = get_lastfm_similar_artists(base_artists, lastfm_api_key, hist_lower, limit=80)
         rag_str = ", ".join(rag_similar) if rag_similar else "Ninguno"
         
         persona = f"""
@@ -111,7 +111,9 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
         [ARTISTAS SIMILARES DE LAST.FM]: {rag_str}
         
         TU TAREA:
-        Selecciona estrictamente a los artistas más relevantes ÚNICAMENTE de esta lista [ARTISTAS SIMILARES DE LAST.FM] para crear tus recomendaciones. Extrae una canción representativa para cada artista elegido.
+        Selecciona estrictamente a los artistas de esta lista [ARTISTAS SIMILARES DE LAST.FM] para crear tus recomendaciones.
+        REGLA DE OBSCUREZA: Para garantizar que el usuario descubra música nueva (ya que suele conocer a los artistas muy famosos), el 80% de tus selecciones DEBEN ser artistas de nicho, independientes, emergentes o menos conocidos dentro de la lista. Evita a los gigantes obvios.
+        Extrae una canción representativa para cada artista elegido.
         """
         reason_example = "Conexión de Last.fm: [Explicación basada en la similitud matemática de audiencia de Last.fm]."
     elif engine == "Discogs":
