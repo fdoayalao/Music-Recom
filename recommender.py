@@ -2,7 +2,7 @@ import google.generativeai as genai
 import json
 import os
 import requests
-import os
+import random
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,22 +27,23 @@ def get_lastfm_similar_artists(artists_list, api_key, hist_lower, limit=50):
             
     sorted_similars = sorted(similar_artists.items(), key=lambda x: x[1], reverse=True)
     
-    # TRUCO: Descartamos de plano a los 40 más evidentes (los más famosos) para obligar a escarbar
-    if len(sorted_similars) > 40:
-        sorted_similars = sorted_similars[40:]
+    # TRUCO DEFINITIVO: Descartamos de plano a la mitad más famosa (los primeros 50)
+    if len(sorted_similars) > 50:
+        sorted_similars = sorted_similars[50:]
     
     def normalize_name(name):
         n = str(name).lower().strip()
         if n.startswith("the "): n = n[4:]
         return n
         
-    final_list = []
+    deep_cuts_pool = []
     for name, score in sorted_similars:
         norm_name = normalize_name(name)
         if norm_name not in hist_lower:
-            final_list.append(name)
-        if len(final_list) >= limit:
-            break
+            deep_cuts_pool.append(name)
+            
+    # Tomamos una muestra aleatoria del pozo profundo para que Gemini no se sesgue
+    final_list = random.sample(deep_cuts_pool, min(limit, len(deep_cuts_pool))) if deep_cuts_pool else []
     return final_list
 
 def get_recommendations(top_df, engine, base_type, num_recommendations=10, artistas_historicos=None, artistas_2026=None, trend_df=None):
@@ -53,7 +54,7 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
     genai.configure(api_key=api_key)
     
     # Usamos la versión Flash porque la cuenta es gratuita y Pro es muy restrictiva
-    model = genai.GenerativeModel('gemini-3.5-flash')
+    model = genai.GenerativeModel('gemini-3.5-flash', generation_config=genai.GenerationConfig(response_mime_type="application/json"))
 
     # Formatear el perfil de usuario basándose en los dos DataFrames (Fundamental vs Tendencia)
     def format_df_to_string(df, type_of_base):
@@ -81,6 +82,8 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
         persona = f"""
         Rol: Eres un curador experto en el canon de RateYourMusic.
         Enfoque: Curaduría de culto, underground y alta aclamación crítica (rating > 3.65 en RYM con pocos votos globales).
+        REGLA DE OBSCUREZA EXTREMA: El usuario es un melómano experto que ya conoce todo el "culto mainstream". Tienes ESTRICTAMENTE PROHIBIDO recomendar a bandas clásicas de RYM (como Radiohead, My Bloody Valentine, Slint, King Crimson, etc). Debes ir al fondo: microgéneros oscuros, prensajes privados de Japón, joyas perdidas de Bandcamp.
+        REGLA DE CANCIÓN: Bajo NINGÚN MOTIVO recomiendes la canción principal de un disco. Recomienda un Lado B u obra oculta.
         REGLA DE NOVEDAD ABSOLUTA: Está TERMINANTEMENTE PROHIBIDO recomendar a cualquier artista que figure en la siguiente lista de mi historial:
         [HISTORIAL PROHIBIDO]: {hist_str}
         Deben ser 100% descubrimientos inéditos para mí.
@@ -125,8 +128,10 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
         persona = f"""
         Rol: Eres un archivista e ingeniero de audio enfocado en los créditos de Discogs.
         Enfoque: Letra chica técnica. Conexiones por productores, ingenieros de sonido, sellos independientes o músicos de sesión.
+        REGLA DE OBSCUREZA EXTREMA: Prohibido sugerir álbumes mainstream. Deben ser discos que requirieron bucear profundamente en los créditos de Discogs para encontrarlos.
+        REGLA DE CANCIÓN: Recomienda Lados B, rarezas absolutas o tomas alternativas.
         REGLA DE PROFUNDIDAD: NO puedes sugerir NADA de lo escuchado en 2026: [HISTORIAL 2026]: {hist_2026_str}
-        Si recomiendas a alguien que está en mi historial general ([HISTORIAL GENERAL]: {hist_str}), debe ser OBLIGATORIAMENTE un lado B, rareza, colaboración o proyecto paralelo conectado por créditos. NUNCA sus discos obvios.
+        Si recomiendas a alguien que está en mi historial general ([HISTORIAL GENERAL]: {hist_str}), debe ser OBLIGATORIAMENTE una colaboración o proyecto paralelo. NUNCA sus discos obvios.
         """
         reason_example = "Año: [año]. Conexión: [Crédito exacto, ej: Producido por X / Mismo bajista de sesión que grabó en Y]."
     else:

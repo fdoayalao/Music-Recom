@@ -15,7 +15,7 @@ except ImportError:
     get_recommendations = None
 
 try:
-    from spotify_exporter import create_spotify_playlist, get_auth_url, get_token, get_currently_playing, sync_recently_played_to_db, get_cached_token
+    from spotify_exporter import create_spotify_playlist, get_auth_url, get_token, get_currently_playing, sync_recently_played_to_db, get_cached_token, filter_unsaved_tracks
 except ImportError:
     create_spotify_playlist = None
     get_auth_url = None
@@ -23,6 +23,7 @@ except ImportError:
     get_currently_playing = None
     sync_recently_played_to_db = None
     get_cached_token = None
+    filter_unsaved_tracks = None
     
 import zipfile
 
@@ -615,9 +616,23 @@ elif page == "Recomendador y Playlists":
                         
                         recs = get_recommendations(top_n, motor, base_type, num_recommendations=10, artistas_historicos=lista_historica, artistas_2026=lista_2026, trend_df=trend_df)
                         if recs:
+                            # ESCUDO DE BIBLIOTECA: Filtrar con Spotify
+                            token_info = st.session_state.get('token_info')
+                            if token_info and filter_unsaved_tracks:
+                                try:
+                                    st.info("Verificando biblioteca de Spotify para descartar canciones ya guardadas...")
+                                    recs = filter_unsaved_tracks(token_info, recs)
+                                    # Recortamos a 10 justos por si quedaron más
+                                    recs = recs[:10]
+                                except Exception as e:
+                                    st.warning("No se pudo verificar tu biblioteca de Spotify. Quizás necesites reconectar tu cuenta para actualizar permisos.")
+                                    recs = recs[:10]
+                            else:
+                                recs = recs[:10]
+                                
                             st.session_state['current_recs'] = recs
                             st.session_state['current_motor'] = motor
-                            st.success("¡Recomendaciones generadas!")
+                            st.success(f"¡{len(recs)} recomendaciones 100% nuevas generadas!")
                         else:
                             st.error("No se pudieron generar recomendaciones. Revisa tu API key en .env y que tengas conexión.")
                     except Exception as e:

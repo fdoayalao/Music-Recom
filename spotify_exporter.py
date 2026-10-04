@@ -14,7 +14,7 @@ def get_spotify_oauth():
     if not client_id or not client_secret:
         raise ValueError("Faltan las credenciales de Spotify")
 
-    scope = "playlist-modify-public playlist-modify-private playlist-read-private user-read-recently-played user-read-currently-playing"
+    scope = "playlist-modify-public playlist-modify-private playlist-read-private user-read-recently-played user-read-currently-playing user-library-read"
     
     return SpotifyOAuth(
         client_id=client_id,
@@ -181,3 +181,40 @@ def create_spotify_playlist(playlist_name, description, tracks_info, token_info)
         return playlist_url
     else:
         return None
+
+def filter_unsaved_tracks(token_info, tracks_info):
+    """
+    Toma una lista de diccionarios [{'artist': 'A', 'track': 'B', 'reason': 'C'}, ...]
+    Busca sus URIs, revisa si el usuario ya las tiene guardadas,
+    y devuelve solo la lista de canciones que NO están guardadas en sus 'Me Gusta'.
+    """
+    sp = spotipy.Spotify(auth=token_info['access_token'])
+    unsaved_tracks = []
+    
+    for info in tracks_info:
+        artist = info.get('artist_name', info.get('artist', ''))
+        track = info.get('track_name', info.get('track', ''))
+        
+        query = f"artist:{artist} track:{track}"
+        result = sp.search(q=query, type='track', limit=1)
+        
+        tracks = result['tracks']['items']
+        if tracks:
+            track_uri = tracks[0]['uri']
+            try:
+                is_saved = sp.current_user_saved_tracks_contains(tracks=[track_uri])[0]
+            except Exception as e:
+                # Si falla por permisos viejos, asumimos falso para no romper todo
+                print("Error verificando saved tracks:", e)
+                is_saved = False
+                
+            if not is_saved:
+                info['spotify_url'] = tracks[0]['external_urls']['spotify']
+                info['cover_url'] = tracks[0]['album']['images'][0]['url'] if tracks[0]['album']['images'] else None
+                info['album_name'] = tracks[0]['album']['name']
+                unsaved_tracks.append(info)
+        else:
+            # Si no se encuentra en Spotify, la pasamos igual porque es un hallazgo raro
+            unsaved_tracks.append(info)
+            
+    return unsaved_tracks
