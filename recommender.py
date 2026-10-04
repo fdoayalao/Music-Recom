@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def get_recommendations(top_df, engine, base_type, num_recommendations=10, artistas_historicos=None, artistas_2026=None):
+def get_recommendations(top_df, engine, base_type, num_recommendations=10, artistas_historicos=None, artistas_2026=None, trend_df=None):
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("No Gemini API key found. Please add GEMINI_API_KEY to your .env file.")
@@ -15,17 +15,22 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
     # Usamos la versión Flash porque la cuenta es gratuita y Pro es muy restrictiva
     model = genai.GenerativeModel('gemini-3.5-flash')
 
-    # Prepare user profile
-    n_count = len(top_df)
-    if base_type == "Artistas":
-        items_list = top_df['artist_name'].tolist()
-        user_profile = f"Top {n_count} Artists: " + ", ".join(items_list)
-    elif base_type == "Canciones":
-        items_list = top_df.apply(lambda row: f"{row['track_name']} by {row['artist_name']}", axis=1).tolist()
-        user_profile = f"Top {n_count} Songs: " + ", ".join(items_list)
-    else: # Álbumes
-        items_list = top_df.apply(lambda row: f"{row['album_name']} by {row['artist_name']}", axis=1).tolist()
-        user_profile = f"Top {n_count} Albums: " + ", ".join(items_list)
+    # Formatear el perfil de usuario basándose en los dos DataFrames (Fundamental vs Tendencia)
+    def format_df_to_string(df, type_of_base):
+        if df is None or df.empty:
+            return "Ninguno"
+        n = len(df)
+        if type_of_base == "Artistas":
+            return f"Top {n} Artists: " + ", ".join(df['artist_name'].tolist())
+        elif type_of_base == "Canciones":
+            return f"Top {n} Songs: " + ", ".join(df.apply(lambda row: f"{row['track_name']} by {row['artist_name']}", axis=1).tolist())
+        else: # Álbumes
+            return f"Top {n} Albums: " + ", ".join(df.apply(lambda row: f"{row['album_name']} by {row['artist_name']}", axis=1).tolist())
+
+    base_profile_str = format_df_to_string(top_df, base_type)
+    trend_profile_str = format_df_to_string(trend_df, base_type)
+    
+    user_profile = f"[PERFIL FUNDAMENTAL (Gusto Histórico o General)]:\n{base_profile_str}\n\n[OBSESIÓN ACTUAL (Tendencia de los últimos 30 días)]:\n{trend_profile_str}"
     
     # Prepare history lists
     hist_str = ", ".join(artistas_historicos) if artistas_historicos else "Ninguno"
@@ -65,6 +70,9 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
 
     prompt = f"""
     {persona}
+    
+    INSTRUCCIÓN DE CONTRASTE TEMPORAL:
+    Analiza el PERFIL FUNDAMENTAL para entender el ADN musical del usuario, pero usa la OBSESIÓN ACTUAL para capturar su estado de ánimo reciente. Tus recomendaciones y tus explicaciones ("reason") deben tratar de tender un puente entre sus gustos históricos y su vibra actual, o profundizar fuertemente en su obsesión reciente de una manera narrativa.
     
     Mis preferencias actuales son:
     {user_profile}
