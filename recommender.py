@@ -1,9 +1,44 @@
 import google.generativeai as genai
 import json
 import os
+import requests
+import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+def get_lastfm_similar_artists(artists_list, api_key, hist_lower, limit=50):
+    similar_artists = {} # artist_name: score
+    for artist in artists_list[:5]: # Top 5 para no saturar la API
+        try:
+            url = f"http://ws.audioscrobbler.com/2.0/?method=artist.getsimilar&artist={requests.utils.quote(artist)}&api_key={api_key}&format=json&limit=20"
+            resp = requests.get(url, timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                similars = data.get('similarartists', {}).get('artist', [])
+                for i, sim in enumerate(similars):
+                    name = sim.get('name')
+                    if name:
+                        score = 20 - i
+                        similar_artists[name] = similar_artists.get(name, 0) + score
+        except Exception as e:
+            continue
+            
+    sorted_similars = sorted(similar_artists.items(), key=lambda x: x[1], reverse=True)
+    
+    def normalize_name(name):
+        n = str(name).lower().strip()
+        if n.startswith("the "): n = n[4:]
+        return n
+        
+    final_list = []
+    for name, score in sorted_similars:
+        norm_name = normalize_name(name)
+        if norm_name not in hist_lower:
+            final_list.append(name)
+        if len(final_list) >= limit:
+            break
+    return final_list
 
 def get_recommendations(top_df, engine, base_type, num_recommendations=10, artistas_historicos=None, artistas_2026=None, trend_df=None):
     api_key = os.getenv("GEMINI_API_KEY")
@@ -47,15 +82,38 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
         """
         reason_example = "Microgénero: [microgénero exacto de RYM]. Álbum de culto: [Álbum]."
     elif engine == "Last.fm":
+        lastfm_api_key = os.getenv("LASTFM_API_KEY")
+        if not lastfm_api_key:
+            raise ValueError("No se encontró LASTFM_API_KEY en .env. ¡Por favor añade tu clave de Last.fm!")
+            
+        base_artists = []
+        if trend_df is not None and not trend_df.empty:
+            base_artists = trend_df['artist_name'].unique().tolist()
+        elif top_df is not None and not top_df.empty:
+            base_artists = top_df['artist_name'].unique().tolist()
+            
+        def normalize_name(name):
+            n = str(name).lower().strip()
+            if n.startswith("the "): n = n[4:]
+            return n
+            
+        hist_lower = set([normalize_name(a) for a in artistas_historicos]) if artistas_historicos else set()
+        
+        # RAG CALL
+        rag_similar = get_lastfm_similar_artists(base_artists, lastfm_api_key, hist_lower, limit=40)
+        rag_str = ", ".join(rag_similar) if rag_similar else "Ninguno"
+        
         persona = f"""
-        Rol: Eres el algoritmo de similitud de audiencia profunda de Last.fm.
-        Enfoque: Puntos ciegos y consenso de audiencia. Puede incluir artistas populares, clásicos o mainstream que sean referentes directos.
-        CONDICIÓN DE AUDIENCIA:
-        - Prioridad 1: Referentes que NUNCA he escuchado. NO deben estar en esta lista: [HISTORIAL GENERAL]: {hist_str}
-        - Prioridad 2: Artistas que he escuchado antes, pero NO en 2026. NO deben estar en esta lista: [HISTORIAL 2026]: {hist_2026_str}
-        - PROHIBIDO: Recomendar artistas que ya escuché en 2026 (los que están en [HISTORIAL 2026]).
+        Rol: Eres un recomendador basado en la API oficial de similitud profunda de Last.fm.
+        Enfoque: Puntos ciegos y consenso de audiencia extraídos directamente de la base de datos de Last.fm.
+        DATOS DUROS INYECTADOS (RAG):
+        He consultado la API de Last.fm usando el Top 5 de la obsesión actual del usuario. La API devolvió esta lista OFICIAL curada de artistas altamente similares (el historial del usuario ya fue filtrado para garantizar novedad pura):
+        [ARTISTAS SIMILARES DE LAST.FM]: {rag_str}
+        
+        TU TAREA:
+        Selecciona estrictamente a los artistas más relevantes ÚNICAMENTE de esta lista [ARTISTAS SIMILARES DE LAST.FM] para crear tus recomendaciones. Extrae una canción representativa para cada artista elegido.
         """
-        reason_example = "Conexión de audiencia: [Un referente clave para los fans de tu top que aún no exploras, o un clásico que no escuchas desde hace años]."
+        reason_example = "Conexión de Last.fm: [Explicación basada en la similitud matemática de audiencia de Last.fm]."
     elif engine == "Discogs":
         persona = f"""
         Rol: Eres un archivista e ingeniero de audio enfocado en los créditos de Discogs.

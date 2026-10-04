@@ -589,32 +589,39 @@ elif page == "Recomendador y Playlists":
         
         if st.button("Generar Recomendaciones con Gemini"):
             if get_recommendations:
-                with st.spinner("Gemini está analizando tu perfil y cruzando con tu historial (esto puede tomar unos segundos)..."):
-                    lista_historica = df['artist_name'].dropna().unique().tolist()
-                    lista_2026 = df[df['year'] == 2026]['artist_name'].dropna().unique().tolist()
+                spinner_text = "Gemini está analizando tu perfil y cruzando con tu historial..."
+                if motor == "Last.fm":
+                    spinner_text = "Consultando en vivo la API de Last.fm y conectando con Gemini..."
                     
-                    # Calcular el Vector de Tendencia (Últimos 30 días)
-                    max_date = df['ts'].max()
-                    cutoff_30_days = max_date - pd.DateOffset(days=30)
-                    recent_data = df[df['ts'] >= cutoff_30_days]
-                    
-                    if base_type == "Artistas":
-                        grouped_recent = recent_data.groupby('artist_name').agg(Play_Count=('ts', 'count')).reset_index()
-                        trend_df = grouped_recent.sort_values(by='Play_Count', ascending=False).head(n_selection)
-                    elif base_type == "Canciones":
-                        grouped_recent = recent_data.groupby(['track_name', 'artist_name']).agg(Play_Count=('ts', 'count')).reset_index()
-                        trend_df = grouped_recent.sort_values(by='Play_Count', ascending=False).head(n_selection)
-                    else: # Álbumes
-                        grouped_recent = recent_data.groupby(['album_name', 'artist_name']).agg(Play_Count=('ts', 'count')).reset_index()
-                        trend_df = grouped_recent.sort_values(by='Play_Count', ascending=False).head(n_selection)
-                    
-                    recs = get_recommendations(top_n, motor, base_type, num_recommendations=10, artistas_historicos=lista_historica, artistas_2026=lista_2026, trend_df=trend_df)
-                    if recs:
-                        st.session_state['current_recs'] = recs
-                        st.session_state['current_motor'] = motor
-                        st.success("¡Recomendaciones generadas!")
-                    else:
-                        st.error("No se pudieron generar recomendaciones. Revisa tu API key en .env y que tengas conexión.")
+                with st.spinner(spinner_text):
+                    try:
+                        lista_historica = df['artist_name'].dropna().unique().tolist()
+                        lista_2026 = df[df['year'] == 2026]['artist_name'].dropna().unique().tolist()
+                        
+                        # Calcular el Vector de Tendencia (Últimos 30 días)
+                        max_date = df['ts'].max()
+                        cutoff_30_days = max_date - pd.DateOffset(days=30)
+                        recent_data = df[df['ts'] >= cutoff_30_days]
+                        
+                        if base_type == "Artistas":
+                            grouped_recent = recent_data.groupby('artist_name').agg(Play_Count=('ts', 'count')).reset_index()
+                            trend_df = grouped_recent.sort_values(by='Play_Count', ascending=False).head(n_selection)
+                        elif base_type == "Canciones":
+                            grouped_recent = recent_data.groupby(['track_name', 'artist_name']).agg(Play_Count=('ts', 'count')).reset_index()
+                            trend_df = grouped_recent.sort_values(by='Play_Count', ascending=False).head(n_selection)
+                        else: # Álbumes
+                            grouped_recent = recent_data.groupby(['album_name', 'artist_name']).agg(Play_Count=('ts', 'count')).reset_index()
+                            trend_df = grouped_recent.sort_values(by='Play_Count', ascending=False).head(n_selection)
+                        
+                        recs = get_recommendations(top_n, motor, base_type, num_recommendations=10, artistas_historicos=lista_historica, artistas_2026=lista_2026, trend_df=trend_df)
+                        if recs:
+                            st.session_state['current_recs'] = recs
+                            st.session_state['current_motor'] = motor
+                            st.success("¡Recomendaciones generadas!")
+                        else:
+                            st.error("No se pudieron generar recomendaciones. Revisa tu API key en .env y que tengas conexión.")
+                    except Exception as e:
+                        st.error(f"Error generando recomendaciones: {e}")
             else:
                 st.error("Módulo de recomendaciones no disponible. Faltan librerías.")
                 
