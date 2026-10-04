@@ -97,21 +97,28 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
             data = json.loads(json_str)
             
             # FILTRO ESTRICTO EN PYTHON (Para mitigar las alucinaciones del LLM)
-            hist_lower = set([str(a).lower().strip() for a in artistas_historicos]) if artistas_historicos else set()
-            hist_2026_lower = set([str(a).lower().strip() for a in artistas_2026]) if artistas_2026 else set()
+            def normalize_name(name):
+                n = str(name).lower().strip()
+                if n.startswith("the "):
+                    n = n[4:]
+                return n
+                
+            hist_lower = set([normalize_name(a) for a in artistas_historicos]) if artistas_historicos else set()
+            hist_2026_lower = set([normalize_name(a) for a in artistas_2026]) if artistas_2026 else set()
             
             filtered_data = []
             for rec in data:
-                artist = str(rec.get('artist', '')).lower().strip()
+                raw_artist = str(rec.get('artist', ''))
+                artist_norm = normalize_name(raw_artist)
                 
                 if engine == "RYM":
-                    if artist in hist_lower:
+                    if artist_norm in hist_lower:
                         continue # Regla estricta: NO puede estar en el historial
                 elif engine == "Last.fm":
-                    if artist in hist_2026_lower:
+                    if artist_norm in hist_2026_lower:
                         continue # Regla estricta: NO puede estar en 2026
                 elif engine == "Discogs":
-                    if artist in hist_2026_lower:
+                    if artist_norm in hist_2026_lower:
                         continue # Regla estricta: NO puede estar en 2026
                         
                 filtered_data.append(rec)
