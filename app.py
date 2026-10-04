@@ -617,7 +617,7 @@ elif page == "Recomendador y Playlists":
                         recs = get_recommendations(top_n, motor, base_type, num_recommendations=10, artistas_historicos=lista_historica, artistas_2026=lista_2026, trend_df=trend_df)
                         if recs:
                             # ESCUDO DE BIBLIOTECA: Filtrar con Spotify
-                            token_info = st.session_state.get('token_info')
+                            token_info = st.session_state.get('spotify_token')
                             if token_info and filter_unsaved_tracks:
                                 try:
                                     st.info("Verificando biblioteca de Spotify para descartar canciones ya guardadas...")
@@ -670,24 +670,24 @@ elif page == "Recomendador y Playlists":
                 """
                 st.markdown(card_html, unsafe_allow_html=True)
                 
-            if create_spotify_playlist:
-                if 'spotify_token' not in st.session_state:
-                    auth_url = get_auth_url()
-                    st.warning("Debes conectar tu cuenta de Spotify para poder crear y exportar playlists.")
-                    st.link_button("Conectar con Spotify", auth_url)
-                else:
-                    if st.button("Exportar Recomendaciones a Spotify"):
-                        with st.spinner("Creando playlist..."):
-                            try:
-                                m = st.session_state.get('current_motor', '')
-                                meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-                                mes_actual = meses[datetime.now().month - 1]
-                                ano_actual = datetime.now().year
-                                
-                                p_name = f"Recomendaciones {m} - {mes_actual} {ano_actual}"
-                                p_desc = f"Descubrimientos mensuales generados por IA usando el motor de {m}."
-                                url = create_spotify_playlist(p_name, p_desc, st.session_state['current_recs'], st.session_state['spotify_token'])
-                                if url:
-                                    st.success(f"¡Playlist creada con éxito! [Abrir en Spotify]({url})")
-                            except Exception as e:
-                                st.error(f"Error exportando a Spotify: {e}")
+        if create_spotify_playlist:
+            if 'spotify_token' not in st.session_state:
+                auth_url = get_auth_url()
+                st.warning("Debes conectar tu cuenta de Spotify para poder crear y exportar playlists.")
+                st.link_button("Conectar con Spotify", auth_url)
+            else:
+                if st.button("Exportar Recomendaciones a Spotify"):
+                    with st.spinner("Creando playlist..."):
+                        try:
+                            m = st.session_state.get('current_motor', '')
+                            meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+                            mes_actual = meses[datetime.now().month - 1]
+                            ano_actual = datetime.now().year
+                            
+                            p_name = f"Recomendaciones {m} - {mes_actual} {ano_actual}"
+                            p_desc = f"Descubrimientos mensuales generados por IA usando el motor de {m}."
+                            url = create_spotify_playlist(p_name, p_desc, st.session_state['current_recs'], st.session_state['spotify_token'])
+                            if url:
+                                st.success(f"¡Playlist creada con éxito! [Abrir en Spotify]({url})")
+                        except Exception as e:
+                            st.error(f"Error exportando a Spotify: {e}")
