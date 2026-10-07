@@ -326,27 +326,40 @@ def render_glass_table(df, show_index=True):
     html += '</tbody></table></div>'
     st.markdown(html, unsafe_allow_html=True)
 
+from sqlalchemy import create_engine, text
+
+def get_engine():
+    supabase_url = os.getenv("SUPABASE_URL")
+    if not supabase_url:
+        return None
+    if supabase_url.startswith("postgresql://"):
+        supabase_url = supabase_url.replace("postgresql://", "postgresql+psycopg2://")
+    return create_engine(supabase_url)
+
 @st.cache_data(max_entries=1)
 def get_years():
-    if not os.path.exists(DB_PATH):
+    engine = get_engine()
+    if not engine:
         return []
-    conn = sqlite3.connect(DB_PATH)
     try:
-        years_df = pd.read_sql_query("SELECT DISTINCT year FROM spotify_history ORDER BY year DESC", conn)
+        years_df = pd.read_sql_query("SELECT DISTINCT year FROM spotify_history ORDER BY year DESC", engine)
         years = years_df['year'].tolist()
-    except Exception:
+    except Exception as e:
+        print(f"Error fetching years: {e}")
         years = []
-    conn.close()
     return years
 
 @st.cache_data(max_entries=2)
 def load_data(year_filter="All Time"):
-    conn = sqlite3.connect(DB_PATH)
+    engine = get_engine()
+    if not engine:
+        return pd.DataFrame()
+        
     if year_filter == "All Time":
-        df = pd.read_sql_query("SELECT * FROM spotify_history", conn)
+        df = pd.read_sql_query("SELECT * FROM spotify_history", engine)
     else:
-        df = pd.read_sql_query("SELECT * FROM spotify_history WHERE year = ?", conn, params=(int(year_filter),))
-    conn.close()
+        df = pd.read_sql_query("SELECT * FROM spotify_history WHERE year = %(year)s", engine, params={"year": int(year_filter)})
+        
     if not df.empty:
         df['ts'] = pd.to_datetime(df['ts'])
     return df
@@ -355,9 +368,11 @@ def load_data(year_filter="All Time"):
 st.title("Music Recommender")
 
 # Check if DB exists
-if not os.path.exists(DB_PATH):
-    st.error("Database not found! Please run `python process_data.py` first to generate `spotify_data.db`.")
+engine = get_engine()
+if not engine:
+    st.error("No se encontró la variable SUPABASE_URL en el entorno (.env o Secrets).")
     st.stop()
+
 
 available_years = get_years()
 
@@ -368,7 +383,7 @@ if 'spotify_token' in st.session_state:
     if st.sidebar.button("Live Sync"):
         if sync_recently_played_to_db:
             with st.spinner("Sincronizando con Spotify..."):
-                added = sync_recently_played_to_db(st.session_state['spotify_token'], DB_PATH)
+                added = sync_recently_played_to_db(st.session_state['spotify_token'])
                 st.cache_data.clear()
                 st.sidebar.success(f"¡Sincronización completa! {added} nuevas reproducciones agregadas.")
                 st.rerun()
@@ -384,7 +399,7 @@ period_options = ["All Time"] + [str(y) for y in available_years]
 selected_period = st.sidebar.selectbox("Selecciona un período", period_options)
 st.sidebar.markdown("---")
 
-page = st.sidebar.radio("Navegación", ["Recomendador y Playlists", "Estadísticas"])
+page = st.sidebar.radio("Navegación", ["Recomendador y Playlists", "Diario de Descubrimientos", "Estadísticas"])
 st.sidebar.markdown("---")
 
 if page == "Estadísticas":
@@ -468,7 +483,45 @@ if page == "Estadísticas":
         top_albums['Hours_Listened'] = top_albums['Hours_Listened'].round(1)
         top_albums.rename(columns={'album_name': 'Album', 'artist_name': 'Artist', 'Play_Count': 'Streams', 'Hours_Listened': 'Hours Listened'}, inplace=True)
         top_albums.index = range(1, 51)
+        top_albums.index = range(1, 51)
         render_glass_table(top_albums)
+
+elif page == "Diario de Descubrimientos":
+    st.markdown('<h2 style="margin-bottom: 24px;">📖 Diario de Descubrimientos</h2>', unsafe_allow_html=True)
+    st.markdown("Aquí se guardan para la posteridad todas las recomendaciones exitosas que el Recomendador Inteligente ha generado para ti.")
+    
+    if engine:
+        try:
+            history_df = pd.read_sql_query("SELECT * FROM saved_recommendations ORDER BY created_at DESC", engine)
+            if history_df.empty:
+                st.info("Aún no tienes recomendaciones guardadas. ¡Genera algunas en la pestaña de Recomendador!")
+            else:
+                for idx, row in history_df.iterrows():
+                    badge = row.get('badge', '')
+                    badge_html = ""
+                    if badge:
+                        badge_color = "#38bdf8"
+                        if "RECONEXIÓN" in badge: badge_color = "#c084fc"
+                        elif "LADO B" in badge: badge_color = "#f59e0b"
+                        
+                        badge_html = f'<div style="display:inline-block; background-color:{badge_color}15; color:{badge_color}; border: 1px solid {badge_color}50; padding: 4px 10px; border-radius: 20px; font-size: 0.65rem; font-weight: 800; letter-spacing: 0.5px; margin-bottom: 8px;">{badge}</div>'
+                    
+                    # Convert to local timezone strings or format directly
+                    date_str = str(row['created_at']).split('.')[0]
+                    
+                    card_html = f"""
+                    <div class="rec-card" style="margin-bottom: 24px;">
+                        <div class="rec-number" style="font-size: 0.8rem; top: 12px; right: 12px; opacity: 0.5;">{date_str}</div>
+                        {badge_html}
+                        <div class="rec-title">{row['track_name']}</div>
+                        <div class="rec-artist">por {row['artist_name']}</div>
+                        <div class="rec-pills">/ MOTOR: {row['motor']} /</div>
+                        <div class="rec-reason">"{row['reason']}"</div>
+                    </div>
+                    """
+                    st.markdown(card_html, unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"Error cargando el diario: {e}")
 
 elif page == "Recomendador y Playlists":
     # Credenciales Warning
@@ -632,7 +685,27 @@ elif page == "Recomendador y Playlists":
                                 
                             st.session_state['current_recs'] = recs
                             st.session_state['current_motor'] = motor
-                            st.success(f"¡{len(recs)} recomendaciones 100% nuevas generadas!")
+                            
+                            # Guardar en Supabase para el Diario de Descubrimientos
+                            if engine:
+                                try:
+                                    with engine.begin() as conn:
+                                        for rec in recs:
+                                            conn.execute(text("""
+                                                INSERT INTO saved_recommendations 
+                                                (motor, artist_name, track_name, reason, badge)
+                                                VALUES (:motor, :artist_name, :track_name, :reason, :badge)
+                                            """), {
+                                                "motor": motor,
+                                                "artist_name": rec.get('artist', 'Desconocido'),
+                                                "track_name": rec.get('item', 'Desconocido'),
+                                                "reason": rec.get('reason', ''),
+                                                "badge": rec.get('badge', '')
+                                            })
+                                except Exception as e:
+                                    print(f"Error saving to history: {e}")
+                                    
+                            st.success(f"¡{len(recs)} recomendaciones 100% nuevas generadas y guardadas en tu diario!")
                         else:
                             st.error("No se pudieron generar recomendaciones. Revisa tu API key en .env y que tengas conexión.")
                     except Exception as e:

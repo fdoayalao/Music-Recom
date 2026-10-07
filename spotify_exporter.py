@@ -59,8 +59,9 @@ def sync_recently_played_to_db(token_info, db_path):
     Fetches the 50 most recently played tracks and inserts them into SQLite.
     Returns the number of new tracks added.
     """
-    import sqlite3
     import pandas as pd
+    import os
+    from sqlalchemy import create_engine, text
     
     sp = spotipy.Spotify(auth=token_info['access_token'])
     try:
@@ -72,46 +73,53 @@ def sync_recently_played_to_db(token_info, db_path):
     if not recent or 'items' not in recent:
         return 0
         
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+    supabase_url = os.getenv("SUPABASE_URL")
+    if not supabase_url:
+        print("No SUPABASE_URL configured")
+        return 0
+    if supabase_url.startswith("postgresql://"):
+        supabase_url = supabase_url.replace("postgresql://", "postgresql+psycopg2://")
+    engine = create_engine(supabase_url)
     
     new_tracks_count = 0
     
-    for item in recent['items']:
-        played_at_iso = item['played_at']
-        track = item['track']
-        
-        # Convierte el ISO 8601 al formato de base de datos usando pandas para asegurar homogeneidad
-        ts = pd.to_datetime(played_at_iso).strftime('%Y-%m-%d %H:%M:%S+00:00')
-        year = pd.to_datetime(played_at_iso).year
-        
-        track_uri = track['uri']
-        track_name = track['name']
-        artist_name = track['artists'][0]['name']
-        album_name = track['album']['name']
-        
-        # Spotify recently played doesn't return exactly ms_played by the user,
-        # but we use the track's duration since it's fully registered as played.
-        ms_played = track['duration_ms']
-        minutes_played = ms_played / 60000.0
-        hours_played = ms_played / 3600000.0
-        
-        # Check if this exact reproduction already exists
-        cursor.execute("SELECT COUNT(*) FROM spotify_history WHERE track_uri = ? AND ts = ?", (track_uri, ts))
-        exists = cursor.fetchone()[0]
-        
-        if not exists:
-            # We must match the schema exactly:
-            # ts, year, ms_played, minutes_played, hours_played, track_name, artist_name, album_name, track_uri
-            cursor.execute('''
-                INSERT INTO spotify_history 
-                (ts, year, ms_played, minutes_played, hours_played, track_name, artist_name, album_name, track_uri)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (ts, year, ms_played, minutes_played, hours_played, track_name, artist_name, album_name, track_uri))
-            new_tracks_count += 1
+    with engine.begin() as conn:
+        for item in recent['items']:
+            played_at_iso = item['played_at']
+            track = item['track']
             
-    conn.commit()
-    conn.close()
+            # Convierte el ISO 8601 al formato de base de datos usando pandas para asegurar homogeneidad
+            ts = pd.to_datetime(played_at_iso).strftime('%Y-%m-%d %H:%M:%S+00:00')
+            year = pd.to_datetime(played_at_iso).year
+            
+            track_uri = track['uri']
+            track_name = track['name']
+            artist_name = track['artists'][0]['name']
+            album_name = track['album']['name']
+            
+            # Spotify recently played doesn't return exactly ms_played by the user,
+            # but we use the track's duration since it's fully registered as played.
+            ms_played = track['duration_ms']
+            minutes_played = ms_played / 60000.0
+            hours_played = ms_played / 3600000.0
+            
+            # Check if this exact reproduction already exists
+            exists = conn.execute(text("SELECT COUNT(*) FROM spotify_history WHERE track_uri = :uri AND ts = :ts"), {"uri": track_uri, "ts": ts}).scalar()
+            
+            if not exists:
+                # We must match the schema exactly:
+                # ts, year, ms_played, minutes_played, hours_played, track_name, artist_name, album_name, track_uri
+                conn.execute(text('''
+                    INSERT INTO spotify_history 
+                    (ts, year, ms_played, minutes_played, hours_played, track_name, artist_name, album_name, track_uri)
+                    VALUES (:ts, :year, :ms_played, :minutes_played, :hours_played, :track_name, :artist_name, :album_name, :track_uri)
+                '''), {
+                    "ts": ts, "year": year, "ms_played": ms_played, "minutes_played": minutes_played, 
+                    "hours_played": hours_played, "track_name": track_name, "artist_name": artist_name, 
+                    "album_name": album_name, "track_uri": track_uri
+                })
+                new_tracks_count += 1
+                
     return new_tracks_count
 
 def create_spotify_playlist(playlist_name, description, tracks_info, token_info):
