@@ -326,7 +326,7 @@ def render_glass_table(df, show_index=True):
     html += '</tbody></table></div>'
     st.markdown(html, unsafe_allow_html=True)
 
-@st.cache_data
+@st.cache_data(max_entries=1)
 def get_years():
     if not os.path.exists(DB_PATH):
         return []
@@ -339,7 +339,7 @@ def get_years():
     conn.close()
     return years
 
-@st.cache_data
+@st.cache_data(max_entries=2)
 def load_data(year_filter="All Time"):
     conn = sqlite3.connect(DB_PATH)
     if year_filter == "All Time":
