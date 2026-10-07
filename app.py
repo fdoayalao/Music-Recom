@@ -399,7 +399,7 @@ period_options = ["All Time"] + [str(y) for y in available_years]
 selected_period = st.sidebar.selectbox("Selecciona un período", period_options)
 st.sidebar.markdown("---")
 
-page = st.sidebar.radio("Navegación", ["Recomendador y Playlists", "Diario de Descubrimientos", "Estadísticas"])
+page = st.sidebar.radio("Navegación", ["Recomendador y Playlists", "Estadísticas", "Diario de Descubrimientos"])
 st.sidebar.markdown("---")
 
 if page == "Estadísticas":
@@ -496,6 +496,14 @@ elif page == "Diario de Descubrimientos":
             if history_df.empty:
                 st.info("Aún no tienes recomendaciones guardadas. ¡Genera algunas en la pestaña de Recomendador!")
             else:
+                motores_disponibles = ["Todos"] + sorted(history_df['motor'].dropna().unique().tolist())
+                motor_filtro = st.selectbox("Filtrar por motor de búsqueda", motores_disponibles)
+                
+                if motor_filtro != "Todos":
+                    history_df = history_df[history_df['motor'] == motor_filtro]
+                    
+                st.markdown(f"**Mostrando {len(history_df)} recomendaciones guardadas:**")
+                
                 for idx, row in history_df.iterrows():
                     badge = row.get('badge', '')
                     badge_html = ""
