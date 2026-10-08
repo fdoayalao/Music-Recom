@@ -54,7 +54,7 @@ def get_currently_playing(token_info):
         pass
     return None
 
-def sync_recently_played_to_db(token_info, db_path):
+def sync_recently_played_to_db(token_info):
     """
     Fetches the 50 most recently played tracks and inserts them into SQLite.
     Returns the number of new tracks added.
