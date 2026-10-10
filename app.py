@@ -761,12 +761,8 @@ elif page == "Recomendador y Playlists":
                     with st.spinner("Creando playlist..."):
                         try:
                             m = st.session_state.get('current_motor', '')
-                            meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-                            mes_actual = meses[datetime.now().month - 1]
-                            ano_actual = datetime.now().year
-                            
-                            p_name = f"Recomendaciones {m} - {mes_actual} {ano_actual}"
-                            p_desc = f"Descubrimientos mensuales generados por IA usando el motor de {m}."
+                            p_name = f"Music Recommender: {m}"
+                            p_desc = f"Descubrimientos generados por IA usando el motor de {m}."
                             url = create_spotify_playlist(p_name, p_desc, st.session_state['current_recs'], st.session_state['spotify_token'])
                             if url:
                                 st.success(f"¡Playlist creada con éxito! [Abrir en Spotify]({url})")
