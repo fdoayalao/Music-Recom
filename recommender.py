@@ -87,6 +87,8 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
         REGLA DE NOVEDAD ABSOLUTA: Está TERMINANTEMENTE PROHIBIDO recomendar a cualquier artista que figure en la siguiente lista de mi historial:
         [HISTORIAL PROHIBIDO]: {hist_str}
         Deben ser 100% descubrimientos inéditos para mí.
+        REGLA DE DIVERSIDAD: Asegura que los artistas recomendados vengan de distintos microgéneros. No más de 1 o 2 recomendaciones pueden pertenecer al mismo estilo o influencia.
+        REGLA DE SPOTIFY: Asegúrate 100% que la canción recomendada exista en el catálogo oficial de Spotify. Nada de bootlegs, demos, ni discos tan oscuros que no estén en streaming.
         """
         reason_example = "Microgénero: [microgénero exacto de RYM]. Álbum de culto: [Álbum]."
     elif engine == "Last.fm":
@@ -122,6 +124,8 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
         Selecciona estrictamente a los artistas de esta lista [ARTISTAS SIMILARES DE LAST.FM] para crear tus recomendaciones.
         REGLA DE OBSCUREZA EXTREMA: El usuario es un melómano que ya conoce a todas las bandas famosas. Todos los artistas que elijas deben ser descubrimientos frescos.
         REGLA DE CANCIÓN: Bajo NINGÚN MOTIVO recomiendes la canción más escuchada de la banda. Debes recomendar obligatoriamente un "Lado B" o una canción oculta/profunda de la discografía del artista.
+        REGLA DE DIVERSIDAD: Selecciona artistas de géneros y sonidos diferentes dentro de la lista. Prohibido incluir más de 1 o 2 artistas que se parezcan entre sí o que provengan de la misma influencia principal.
+        REGLA DE SPOTIFY: Asegúrate 100% que la canción recomendada exista en el catálogo oficial de Spotify (evita demos, bootlegs ineditos o covers en vivo raros que solo existan en YouTube).
         """
         reason_example = "Conexión de Last.fm: [Explicación basada en la similitud matemática de audiencia de Last.fm]."
     elif engine == "Discogs":
@@ -132,6 +136,8 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
         REGLA DE CANCIÓN: Recomienda Lados B, rarezas absolutas o tomas alternativas.
         REGLA DE PROFUNDIDAD: NO puedes sugerir NADA de lo escuchado en 2026: [HISTORIAL 2026]: {hist_2026_str}
         Si recomiendas a alguien que está en mi historial general ([HISTORIAL GENERAL]: {hist_str}), debe ser OBLIGATORIAMENTE una colaboración o proyecto paralelo. NUNCA sus discos obvios.
+        REGLA DE DIVERSIDAD: Asegura máxima variedad de artistas. No más de 1-2 recomendaciones pueden venir de la misma escena o influencia.
+        REGLA DE SPOTIFY: Asegúrate 100% que la canción recomendada exista en el catálogo oficial de Spotify (evita demos, bootlegs ineditos o rarezas que solo estén en vinilo).
         """
         reason_example = "Año: [año]. Conexión: [Crédito exacto, ej: Producido por X / Mismo bajista de sesión que grabó en Y]."
     else:

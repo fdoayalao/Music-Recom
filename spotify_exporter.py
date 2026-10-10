@@ -175,12 +175,6 @@ def create_spotify_playlist(playlist_name, description, tracks_info, token_info)
         tracks = result['tracks']['items']
         if tracks:
             track_uris.append(tracks[0]['uri'])
-        else:
-            # Fallback: just search the artist
-            fallback_query = f"artist:{artist}"
-            fallback_result = sp.search(q=fallback_query, type='track', limit=1)
-            if fallback_result['tracks']['items']:
-                track_uris.append(fallback_result['tracks']['items'][0]['uri'])
                 
     if track_uris:
         # Add items in batches of 100 max
