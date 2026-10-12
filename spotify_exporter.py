@@ -122,7 +122,7 @@ def sync_recently_played_to_db(token_info):
                 
     return new_tracks_count
 
-def create_spotify_playlist(playlist_name, description, tracks_info, token_info):
+def create_spotify_playlist(playlist_name, description, tracks_info, token_info, motor=None):
     """
     tracks_info should be a list of dicts with 'artist' and 'track' (or 'item' for albums).
     """
@@ -130,20 +130,39 @@ def create_spotify_playlist(playlist_name, description, tracks_info, token_info)
     
     user_id = sp.current_user()['id']
     
-    # Check if a playlist with this exact name already exists
+    # Check if an existing playlist exists for this motor or name
     playlists = sp.current_user_playlists(limit=50)
     playlist_id = None
     playlist_url = None
     
+    target_motor = (motor or "").strip().lower()
+    
+    exact_matches = []
+    motor_matches = []
+    
     while playlists:
-        for pl in playlists['items']:
-            if pl['name'] == playlist_name and pl['owner']['id'] == user_id:
-                playlist_id = pl['id']
-                playlist_url = pl['external_urls']['spotify']
-                break
-        if playlist_id:
+        for pl in playlists.get('items', []):
+            if pl.get('owner', {}).get('id') == user_id:
+                p_name_lower = pl.get('name', '').strip().lower()
+                
+                # Coincidencia exacta con el nombre buscado
+                if p_name_lower == playlist_name.strip().lower():
+                    exact_matches.append(pl)
+                # Coincidencia por motor (ej: "Recomendaciones Last.fm - Octubre 2026", "Recomendaciones Last.fm", etc.)
+                elif target_motor and target_motor in p_name_lower:
+                    # Dar prioridad a las que dicen "recomendaciones"
+                    if "recomendaciones" in p_name_lower:
+                        motor_matches.insert(0, pl)
+                    else:
+                        motor_matches.append(pl)
+                        
+        if exact_matches or motor_matches:
+            chosen = exact_matches[0] if exact_matches else motor_matches[0]
+            playlist_id = chosen['id']
+            playlist_url = chosen['external_urls']['spotify']
             break
-        if playlists['next']:
+            
+        if playlists.get('next'):
             playlists = sp.next(playlists)
         else:
             break

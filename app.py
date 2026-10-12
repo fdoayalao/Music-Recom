@@ -761,9 +761,9 @@ elif page == "Recomendador y Playlists":
                     with st.spinner("Creando playlist..."):
                         try:
                             m = st.session_state.get('current_motor', '')
-                            p_name = f"Music Recommender: {m}"
+                            p_name = f"Recomendaciones {m}"
                             p_desc = f"Descubrimientos generados por IA usando el motor de {m}."
-                            url = create_spotify_playlist(p_name, p_desc, st.session_state['current_recs'], st.session_state['spotify_token'])
+                            url = create_spotify_playlist(p_name, p_desc, st.session_state['current_recs'], st.session_state['spotify_token'], motor=m)
                             if url:
                                 st.success(f"¡Playlist creada con éxito! [Abrir en Spotify]({url})")
                         except Exception as e:
