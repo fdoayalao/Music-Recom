@@ -71,7 +71,7 @@ def get_lastfm_multi_seed_candidates(seed_artists, api_key, blocked_set, limit=3
     scored_candidates.sort(key=lambda x: x['affinity_score'], reverse=True)
     return scored_candidates[:limit]
 
-def get_recommendations(top_df, engine, base_type, num_recommendations=10, artistas_historicos=None, artistas_2026=None, trend_df=None, artistas_guardados=None, confirmed_hits=None):
+def get_recommendations(top_df, engine, base_type, num_recommendations=10, artistas_historicos=None, artistas_2026=None, trend_df=None, artistas_guardados=None, confirmed_hits=None, **kwargs):
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("No Gemini API key found. Please add GEMINI_API_KEY to your .env file.")

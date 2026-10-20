@@ -772,15 +772,24 @@ elif page == "Recomendador y Playlists":
                         confirmed_hits = get_feedback_signals()
                         
                         # Pedir candidatos a Gemini filtrando historial, recomendaciones previas y con feedback real
-                        candidates = get_recommendations(
-                            top_n, motor, base_type, 
-                            num_recommendations=25, 
-                            artistas_historicos=lista_historica, 
-                            artistas_2026=lista_2026, 
-                            trend_df=trend_df,
-                            artistas_guardados=lista_guardados,
-                            confirmed_hits=confirmed_hits
-                        )
+                        import inspect
+                        sig = inspect.signature(get_recommendations)
+                        rec_kwargs = {
+                            'top_df': top_n,
+                            'engine': motor,
+                            'base_type': base_type,
+                            'num_recommendations': 25,
+                            'artistas_historicos': lista_historica,
+                            'artistas_2026': lista_2026,
+                            'trend_df': trend_df
+                        }
+                        has_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+                        if 'artistas_guardados' in sig.parameters or has_kwargs:
+                            rec_kwargs['artistas_guardados'] = lista_guardados
+                        if 'confirmed_hits' in sig.parameters or has_kwargs:
+                            rec_kwargs['confirmed_hits'] = confirmed_hits
+                            
+                        candidates = get_recommendations(**rec_kwargs)
                         
                         if candidates:
                             # ESCUDO DE BIBLIOTECA Y VERIFICACIÓN SPOTIFY:
