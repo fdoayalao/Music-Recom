@@ -517,12 +517,21 @@ elif page == "Diario de Descubrimientos":
                     # Convert to local timezone strings or format directly
                     date_str = str(row['created_at']).split('.')[0]
                     
+                    cover_img = f'<img src="{row["cover_url"]}" style="width: 56px; height: 56px; border-radius: 8px; margin-right: 14px; float: left; object-fit: cover; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">' if row.get('cover_url') else ''
+                    title_display = f'<a href="{row["spotify_url"]}" target="_blank" style="color:white; text-decoration:none; hover:underline;">{row["track_name"]} ↗</a>' if row.get('spotify_url') else row['track_name']
+                    
                     card_html = f"""
-                    <div class="rec-card" style="margin-bottom: 24px;">
+                    <div class="rec-card" style="margin-bottom: 24px; overflow: hidden;">
                         <div class="rec-number" style="font-size: 0.8rem; top: 12px; right: 12px; opacity: 0.5;">{date_str}</div>
                         {badge_html}
-                        <div class="rec-title">{row['track_name']}</div>
-                        <div class="rec-artist">por {row['artist_name']}</div>
+                        <div style="display: flex; align-items: center; margin-top: 6px;">
+                            {cover_img}
+                            <div>
+                                <div class="rec-title">{title_display}</div>
+                                <div class="rec-artist">por {row['artist_name']}</div>
+                            </div>
+                        </div>
+                        <div style="clear: both; margin-top: 10px;"></div>
                         <div class="rec-pills">/ MOTOR: {row['motor']} /</div>
                         <div class="rec-reason">"{row['reason']}"</div>
                     </div>
@@ -657,7 +666,21 @@ elif page == "Recomendador y Playlists":
                     
                 with st.spinner(spinner_text):
                     try:
-                        lista_historica = df['artist_name'].dropna().unique().tolist()
+                        # Cargar artistas de toda la historia y artistas ya recomendados recientemente
+                        if engine:
+                            try:
+                                with engine.connect() as conn:
+                                    all_hist_res = conn.execute(text("SELECT DISTINCT artist_name FROM spotify_history")).fetchall()
+                                    lista_historica = [r[0] for r in all_hist_res if r[0]]
+                                    saved_res = conn.execute(text("SELECT DISTINCT artist_name FROM saved_recommendations")).fetchall()
+                                    lista_guardados = [r[0] for r in saved_res if r[0]]
+                            except Exception:
+                                lista_historica = df['artist_name'].dropna().unique().tolist()
+                                lista_guardados = []
+                        else:
+                            lista_historica = df['artist_name'].dropna().unique().tolist()
+                            lista_guardados = []
+                            
                         lista_2026 = df[df['year'] == 2026]['artist_name'].dropna().unique().tolist()
                         
                         # Calcular el Vector de Tendencia (Últimos 30 días)
@@ -675,45 +698,50 @@ elif page == "Recomendador y Playlists":
                             grouped_recent = recent_data.groupby(['album_name', 'artist_name']).agg(Play_Count=('ts', 'count')).reset_index()
                             trend_df = grouped_recent.sort_values(by='Play_Count', ascending=False).head(n_selection)
                         
-                        recs = get_recommendations(top_n, motor, base_type, num_recommendations=10, artistas_historicos=lista_historica, artistas_2026=lista_2026, trend_df=trend_df)
-                        if recs:
-                            # ESCUDO DE BIBLIOTECA: Filtrar con Spotify
+                        # Pedir candidatos a Gemini filtrando historial y recomendaciones previas
+                        candidates = get_recommendations(
+                            top_n, motor, base_type, 
+                            num_recommendations=25, 
+                            artistas_historicos=lista_historica, 
+                            artistas_2026=lista_2026, 
+                            trend_df=trend_df,
+                            artistas_guardados=lista_guardados
+                        )
+                        
+                        if candidates:
+                            # ESCUDO DE BIBLIOTECA Y VERIFICACIÓN SPOTIFY:
+                            # Valida que existan 100% en Spotify, coincidan en artista y no estén en tu biblioteca
                             token_info = st.session_state.get('spotify_token')
-                            if token_info and filter_unsaved_tracks:
-                                try:
-                                    st.info("Verificando biblioteca de Spotify para descartar canciones ya guardadas...")
-                                    recs = filter_unsaved_tracks(token_info, recs)
-                                    # Recortamos a 10 justos por si quedaron más
-                                    recs = recs[:10]
-                                except Exception as e:
-                                    st.warning("No se pudo verificar tu biblioteca de Spotify. Quizás necesites reconectar tu cuenta para actualizar permisos.")
-                                    recs = recs[:10]
+                            if filter_unsaved_tracks:
+                                recs = filter_unsaved_tracks(token_info, candidates, target_count=10)
                             else:
-                                recs = recs[:10]
+                                recs = candidates[:10]
                                 
                             st.session_state['current_recs'] = recs
                             st.session_state['current_motor'] = motor
                             
                             # Guardar en Supabase para el Diario de Descubrimientos
-                            if engine:
+                            if engine and recs:
                                 try:
                                     with engine.begin() as conn:
                                         for rec in recs:
                                             conn.execute(text("""
                                                 INSERT INTO saved_recommendations 
-                                                (motor, artist_name, track_name, reason, badge)
-                                                VALUES (:motor, :artist_name, :track_name, :reason, :badge)
+                                                (motor, artist_name, track_name, reason, badge, spotify_url, cover_url)
+                                                VALUES (:motor, :artist_name, :track_name, :reason, :badge, :spotify_url, :cover_url)
                                             """), {
                                                 "motor": motor,
                                                 "artist_name": rec.get('artist', 'Desconocido'),
                                                 "track_name": rec.get('item', 'Desconocido'),
                                                 "reason": rec.get('reason', ''),
-                                                "badge": rec.get('badge', '')
+                                                "badge": rec.get('badge', ''),
+                                                "spotify_url": rec.get('spotify_url', ''),
+                                                "cover_url": rec.get('cover_url', '')
                                             })
                                 except Exception as e:
                                     print(f"Error saving to history: {e}")
                                     
-                            st.success(f"¡{len(recs)} recomendaciones 100% nuevas generadas y guardadas en tu diario!")
+                            st.success(f"¡{len(recs)} recomendaciones 100% verificadas en Spotify, libres de repetición y guardadas!")
                         else:
                             st.error("No se pudieron generar recomendaciones. Revisa tu API key en .env y que tengas conexión.")
                     except Exception as e:
@@ -729,6 +757,8 @@ elif page == "Recomendador y Playlists":
                 track = rec.get('item', 'Desconocido')
                 reason = rec.get('reason', '')
                 badge = rec.get('badge', '')
+                cover_url = rec.get('cover_url', '')
+                spotify_url = rec.get('spotify_url', '')
                 
                 badge_html = ""
                 if badge:
@@ -738,13 +768,22 @@ elif page == "Recomendador y Playlists":
                     
                     badge_html = f'<div style="display:inline-block; background-color:{badge_color}15; color:{badge_color}; border: 1px solid {badge_color}50; padding: 4px 10px; border-radius: 20px; font-size: 0.65rem; font-weight: 800; letter-spacing: 0.5px; margin-bottom: 8px;">{badge}</div>'
                 
+                cover_img = f'<img src="{cover_url}" style="width: 56px; height: 56px; border-radius: 8px; margin-right: 14px; float: left; object-fit: cover; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">' if cover_url else ''
+                title_display = f'<a href="{spotify_url}" target="_blank" style="color:white; text-decoration:none;">{track} ↗</a>' if spotify_url else track
+                
                 # HTML template para la tarjeta de recomendación
                 card_html = f"""
-                <div class="rec-card">
+                <div class="rec-card" style="overflow: hidden;">
                     <div class="rec-number">[{str(idx+1).zfill(2)}]</div>
                     {badge_html}
-                    <div class="rec-title">{track}</div>
-                    <div class="rec-artist">por {artist}</div>
+                    <div style="display: flex; align-items: center; margin-top: 6px;">
+                        {cover_img}
+                        <div>
+                            <div class="rec-title">{title_display}</div>
+                            <div class="rec-artist">por {artist}</div>
+                        </div>
+                    </div>
+                    <div style="clear: both; margin-top: 10px;"></div>
                     <div class="rec-pills">/ MOTOR: {motor} /</div>
                     <div class="rec-reason">"{reason}"</div>
                 </div>

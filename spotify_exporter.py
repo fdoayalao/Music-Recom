@@ -184,16 +184,16 @@ def create_spotify_playlist(playlist_name, description, tracks_info, token_info,
     track_uris = []
     
     for info in tracks_info:
-        artist = info.get('artist', info.get('artist_name', ''))
-        track = info.get('track', info.get('item', info.get('track_name', '')))
-        
-        # Search query
-        query = f"artist:{artist} {track}"
-        result = sp.search(q=query, type='track', limit=1)
-        
-        tracks = result['tracks']['items']
-        if tracks:
-            track_uris.append(tracks[0]['uri'])
+        # Si ya viene con su URI oficial validada, la usamos directamente (rápido y 100% exacto)
+        uri = info.get('track_uri')
+        if uri:
+            track_uris.append(uri)
+        else:
+            artist = info.get('artist', info.get('artist_name', ''))
+            track = info.get('track', info.get('item', info.get('track_name', '')))
+            found = find_verified_spotify_track(sp, artist, track)
+            if found:
+                track_uris.append(found['uri'])
                 
     if track_uris:
         # Add items in batches of 100 max
@@ -203,39 +203,111 @@ def create_spotify_playlist(playlist_name, description, tracks_info, token_info,
     else:
         return None
 
-def filter_unsaved_tracks(token_info, tracks_info):
+def clean_text(s):
+    import re
+    s = str(s).lower().strip()
+    s = re.sub(r'\(.*?\)', '', s)
+    s = re.sub(r'\[.*?\]', '', s)
+    if s.startswith("the "): 
+        s = s[4:]
+    return "".join(c for c in s if c.isalnum() or c.isspace()).strip()
+
+def find_verified_spotify_track(sp, artist, track):
     """
-    Toma una lista de diccionarios [{'artist': 'A', 'track': 'B', 'reason': 'C'}, ...]
-    Busca sus URIs, revisa si el usuario ya las tiene guardadas,
-    y devuelve solo la lista de canciones que NO están guardadas en sus 'Me Gusta'.
+    Busca una canción en Spotify y verifica que el artista y el título
+    coincidan de verdad con la recomendación (evitando temas erróneos de otros artistas).
     """
-    sp = spotipy.Spotify(auth=token_info['access_token'])
-    unsaved_tracks = []
+    norm_artist = clean_text(artist)
+    norm_track = clean_text(track)
+    if not norm_artist or not norm_track:
+        return None
+        
+    queries = [
+        f'artist:"{artist}" track:"{track}"',
+        f'"{artist}" "{track}"',
+        f'{artist} {track}'
+    ]
+    
+    for q in queries:
+        try:
+            res = sp.search(q=q, type='track', limit=5)
+            items = res.get('tracks', {}).get('items', [])
+            for item in items:
+                # 1. Verificar coincidencia del artista
+                artist_matched = False
+                for art in item.get('artists', []):
+                    sp_artist = clean_text(art.get('name', ''))
+                    if sp_artist == norm_artist or sp_artist in norm_artist or norm_artist in sp_artist:
+                        artist_matched = True
+                        break
+                if not artist_matched:
+                    continue
+                    
+                # 2. Verificar coincidencia del título de la canción (no solo del disco)
+                sp_track = clean_text(item.get('name', ''))
+                if norm_track in sp_track or sp_track in norm_track:
+                    return item
+        except Exception:
+            continue
+    return None
+
+def filter_and_verify_tracks(token_info, tracks_info, target_count=10):
+    """
+    Toma candidatos de canciones y:
+    1. Verifica que existan 100% en el catálogo de Spotify con coincidencia real de artista y canción.
+    2. Evita repetir el mismo artista dentro de la misma tanda.
+    3. Descarta canciones que el usuario ya tenga guardadas en sus 'Me Gusta' de Spotify.
+    Devuelve hasta target_count canciones totalmente validadas y enriquecidas con track_uri, cover_url y spotify_url.
+    """
+    from spotipy.oauth2 import SpotifyClientCredentials
+    
+    if token_info and isinstance(token_info, dict) and 'access_token' in token_info:
+        sp = spotipy.Spotify(auth=token_info['access_token'])
+        has_user_auth = True
+    else:
+        sp = spotipy.Spotify(client_credentials_manager=SpotifyClientCredentials())
+        has_user_auth = False
+        
+    verified_tracks = []
+    seen_artists = set()
     
     for info in tracks_info:
-        artist = info.get('artist_name', info.get('artist', ''))
-        track = info.get('track_name', info.get('track', ''))
+        artist = info.get('artist', info.get('artist_name', ''))
+        track = info.get('item', info.get('track', info.get('track_name', '')))
         
-        query = f"artist:{artist} track:{track}"
-        result = sp.search(q=query, type='track', limit=1)
+        norm_art = clean_text(artist)
+        if norm_art in seen_artists:
+            continue # Prohibido repetir artista en la misma tanda
+            
+        found = find_verified_spotify_track(sp, artist, track)
+        if not found:
+            continue # Si no está en Spotify o el artista no coincide, se descarta
+            
+        track_uri = found['uri']
         
-        tracks = result['tracks']['items']
-        if tracks:
-            track_uri = tracks[0]['uri']
+        # Verificar si ya está en la biblioteca guardada del usuario
+        if has_user_auth:
             try:
                 is_saved = sp.current_user_saved_tracks_contains(tracks=[track_uri])[0]
+                if is_saved:
+                    continue # Descartar: ya la tiene guardada en su Spotify
             except Exception as e:
-                # Si falla por permisos viejos, asumimos falso para no romper todo
-                print("Error verificando saved tracks:", e)
-                is_saved = False
+                print("Error checking saved tracks:", e)
                 
-            if not is_saved:
-                info['spotify_url'] = tracks[0]['external_urls']['spotify']
-                info['cover_url'] = tracks[0]['album']['images'][0]['url'] if tracks[0]['album']['images'] else None
-                info['album_name'] = tracks[0]['album']['name']
-                unsaved_tracks.append(info)
-        else:
-            # Si no se encuentra en Spotify, la pasamos igual porque es un hallazgo raro
-            unsaved_tracks.append(info)
+        enriched = dict(info)
+        enriched['track_uri'] = track_uri
+        enriched['spotify_url'] = found['external_urls']['spotify']
+        enriched['cover_url'] = found['album']['images'][0]['url'] if found['album']['images'] else None
+        enriched['album_name'] = found['album']['name']
+        enriched['artist'] = found['artists'][0]['name']
+        enriched['item'] = found['name']
+        
+        verified_tracks.append(enriched)
+        seen_artists.add(norm_art)
+        
+        if len(verified_tracks) == target_count:
+            break
             
-    return unsaved_tracks
+    return verified_tracks
+
+filter_unsaved_tracks = filter_and_verify_tracks

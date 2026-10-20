@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def get_lastfm_similar_artists(artists_list, api_key, hist_lower, limit=50):
+def get_lastfm_similar_artists(artists_list, api_key, hist_lower, limit=50, forbidden_lower=None):
     similar_artists = {} # artist_name: score
     for artist in artists_list[:5]: # Top 5 para no saturar la API
         try:
@@ -34,19 +34,20 @@ def get_lastfm_similar_artists(artists_list, api_key, hist_lower, limit=50):
     def normalize_name(name):
         n = str(name).lower().strip()
         if n.startswith("the "): n = n[4:]
-        return n
+        return "".join(c for c in n if c.isalnum() or c.isspace())
         
     deep_cuts_pool = []
+    blocked_pool = (hist_lower or set()) | (forbidden_lower or set())
     for name, score in sorted_similars:
         norm_name = normalize_name(name)
-        if norm_name not in hist_lower:
+        if norm_name not in blocked_pool:
             deep_cuts_pool.append(name)
             
     # Tomamos una muestra aleatoria del pozo profundo para que Gemini no se sesgue
     final_list = random.sample(deep_cuts_pool, min(limit, len(deep_cuts_pool))) if deep_cuts_pool else []
     return final_list
 
-def get_recommendations(top_df, engine, base_type, num_recommendations=10, artistas_historicos=None, artistas_2026=None, trend_df=None):
+def get_recommendations(top_df, engine, base_type, num_recommendations=10, artistas_historicos=None, artistas_2026=None, trend_df=None, artistas_guardados=None):
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("No Gemini API key found. Please add GEMINI_API_KEY to your .env file.")
@@ -105,12 +106,14 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
         def normalize_name(name):
             n = str(name).lower().strip()
             if n.startswith("the "): n = n[4:]
-            return n
+            return "".join(c for c in n if c.isalnum() or c.isspace())
             
         hist_lower = set([normalize_name(a) for a in artistas_historicos]) if artistas_historicos else set()
+        hist_2026_lower = set([normalize_name(a) for a in artistas_2026]) if artistas_2026 else set()
+        saved_rec_lower = set([normalize_name(a) for a in artistas_guardados]) if artistas_guardados else set()
         
-        # RAG CALL (Extraemos hasta 80 artistas para tener un pool profundo)
-        rag_similar = get_lastfm_similar_artists(base_artists, lastfm_api_key, hist_lower, limit=80)
+        # RAG CALL (Extraemos hasta 80 artistas para tener un pool profundo, excluyendo los ya recomendados)
+        rag_similar = get_lastfm_similar_artists(base_artists, lastfm_api_key, hist_lower, limit=80, forbidden_lower=saved_rec_lower)
         rag_str = ", ".join(rag_similar) if rag_similar else "Ninguno"
         
         persona = f"""
@@ -125,7 +128,8 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
         REGLA DE OBSCUREZA EXTREMA: El usuario es un melómano que ya conoce a todas las bandas famosas. Todos los artistas que elijas deben ser descubrimientos frescos.
         REGLA DE CANCIÓN: Bajo NINGÚN MOTIVO recomiendes la canción más escuchada de la banda. Debes recomendar obligatoriamente un "Lado B" o una canción oculta/profunda de la discografía del artista.
         REGLA DE DIVERSIDAD: Selecciona artistas de géneros y sonidos diferentes dentro de la lista. Prohibido incluir más de 1 o 2 artistas que se parezcan entre sí o que provengan de la misma influencia principal.
-        REGLA DE SPOTIFY: Asegúrate 100% que la canción recomendada exista en el catálogo oficial de Spotify (evita demos, bootlegs ineditos o covers en vivo raros que solo existan en YouTube).
+        REGLA DE NO REPETICIÓN: Prohibido sugerir bandas ya recomendadas en sesiones recientes: {", ".join(artistas_guardados[-40:]) if artistas_guardados else "Ninguno"}
+        REGLA DE SPOTIFY: Asegúrate 100% que la canción recomendada exista en el catálogo oficial de streaming de Spotify (evita demos de casete, bootlegs ineditos o covers en vivo raros que no estén en streaming).
         """
         reason_example = "Conexión de Last.fm: [Explicación basada en la similitud matemática de audiencia de Last.fm]."
     elif engine == "Discogs":
@@ -133,16 +137,19 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
         Rol: Eres un archivista e ingeniero de audio enfocado en los créditos de Discogs.
         Enfoque: Letra chica técnica. Conexiones por productores, ingenieros de sonido, sellos independientes o músicos de sesión.
         REGLA DE OBSCUREZA EXTREMA: Prohibido sugerir álbumes mainstream. Deben ser discos que requirieron bucear profundamente en los créditos de Discogs para encontrarlos.
-        REGLA DE CANCIÓN: Recomienda Lados B, rarezas absolutas o tomas alternativas.
+        REGLA DE CANCIÓN: Recomienda Lados B, rarezas o tomas alternativas que estén disponibles en streaming.
         REGLA DE PROFUNDIDAD: NO puedes sugerir NADA de lo escuchado en 2026: [HISTORIAL 2026]: {hist_2026_str}
         Si recomiendas a alguien que está en mi historial general ([HISTORIAL GENERAL]: {hist_str}), debe ser OBLIGATORIAMENTE una colaboración o proyecto paralelo. NUNCA sus discos obvios.
         REGLA DE DIVERSIDAD: Asegura máxima variedad de artistas. No más de 1-2 recomendaciones pueden venir de la misma escena o influencia.
-        REGLA DE SPOTIFY: Asegúrate 100% que la canción recomendada exista en el catálogo oficial de Spotify (evita demos, bootlegs ineditos o rarezas que solo estén en vinilo).
+        REGLA DE NO REPETICIÓN: Prohibido repetir artistas que ya fueron recomendados en sesiones recientes: {", ".join(artistas_guardados[-40:]) if artistas_guardados else "Ninguno"}
+        REGLA DE SPOTIFY: Asegúrate 100% que la canción recomendada exista en el catálogo oficial de streaming de Spotify.
         """
         reason_example = "Año: [año]. Conexión: [Crédito exacto, ej: Producido por X / Mismo bajista de sesión que grabó en Y]."
     else:
         persona = "Act as a music recommender."
         reason_example = "Recomendado por similitud."
+
+    recent_blocked_str = ", ".join(artistas_guardados[-50:]) if artistas_guardados else "Ninguno"
 
     prompt = f"""
     {persona}
@@ -150,10 +157,15 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
     INSTRUCCIÓN DE CONTRASTE TEMPORAL:
     Analiza el PERFIL FUNDAMENTAL para entender el ADN musical del usuario, pero usa la OBSESIÓN ACTUAL para capturar su estado de ánimo reciente. Tus recomendaciones y tus explicaciones ("reason") deben tratar de tender un puente entre sus gustos históricos y su vibra actual, o profundizar fuertemente en su obsesión reciente de una manera narrativa.
     
+    [ARTISTAS PROHIBIDOS POR REPETICIÓN RECIENTE]:
+    {recent_blocked_str}
+    
+    REGLA GENERAL ESTRICTA: Está TERMINANTEMENTE PROHIBIDO volver a recomendar a cualquier banda que figure en [ARTISTAS PROHIBIDOS POR REPETICIÓN RECIENTE] (como The Blue Nile, The Sound, Bark Psychosis, etc.). El usuario quiere variedad y descubrir artistas distintos.
+    
     Mis preferencias actuales son:
     {user_profile}
     
-    Con base en estas reglas, genera una lista de al menos {num_recommendations * 4} recomendaciones musicales altamente relevantes. Genera bastantes opciones para asegurar que cumples los filtros.
+    Con base en estas reglas, genera una lista de al menos {max(num_recommendations * 2, 25)} recomendaciones musicales altamente relevantes. Genera opciones variadas para garantizar que cumplan los filtros de streaming.
     
     IMPORTANTE: Siempre recomienda una canción específica en el campo 'item'.
     
@@ -180,20 +192,30 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
             json_str = text[start_idx:end_idx+1]
             data = json.loads(json_str)
             
-            # FILTRO ESTRICTO EN PYTHON (Para mitigar las alucinaciones del LLM)
+            # FILTRO ESTRICTO EN PYTHON (Para mitigar alucinaciones y repeticiones del LLM)
             def normalize_name(name):
                 n = str(name).lower().strip()
                 if n.startswith("the "):
                     n = n[4:]
-                return n
+                return "".join(c for c in n if c.isalnum() or c.isspace())
                 
             hist_lower = set([normalize_name(a) for a in artistas_historicos]) if artistas_historicos else set()
             hist_2026_lower = set([normalize_name(a) for a in artistas_2026]) if artistas_2026 else set()
+            saved_rec_lower = set([normalize_name(a) for a in artistas_guardados]) if artistas_guardados else set()
             
             filtered_data = []
+            seen_artists_in_batch = set()
+            
             for rec in data:
                 raw_artist = str(rec.get('artist', ''))
                 artist_norm = normalize_name(raw_artist)
+                
+                # Prohibido repetir artistas recomendados en sesiones recientes
+                if artist_norm in saved_rec_lower:
+                    continue
+                # Prohibido repetir el mismo artista dentro de la misma tanda
+                if artist_norm in seen_artists_in_batch:
+                    continue
                 
                 if engine == "RYM":
                     if artist_norm in hist_lower:
@@ -206,13 +228,15 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
                         continue # Regla estricta: NO puede estar en 2026
                         
                 filtered_data.append(rec)
-                if len(filtered_data) == num_recommendations:
+                seen_artists_in_batch.add(artist_norm)
+                if len(filtered_data) == max(num_recommendations, 25):
                     break
                     
             return filtered_data
         else:
             print("No se encontró un array JSON en la respuesta de Gemini.")
             print(f"Respuesta bruta: {text}")
+            return []
             return []
             
     except Exception as e:
