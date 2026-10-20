@@ -364,6 +364,41 @@ def load_data(year_filter="All Time"):
         df['ts'] = pd.to_datetime(df['ts'])
     return df
 
+@st.cache_data(ttl=600)
+def get_feedback_signals():
+    """
+    Cruza saved_recommendations con spotify_history donde la reproducción
+    ocurrió con fecha posterior a la recomendación generada.
+    Retorna hits confirmados (escuchados 2 o más veces).
+    """
+    db_engine = get_engine()
+    if not db_engine:
+        return []
+    try:
+        query = text("""
+            SELECT 
+                sr.artist_name, 
+                sr.track_name, 
+                sr.motor,
+                sr.created_at,
+                COUNT(sh.ts) AS plays_after
+            FROM saved_recommendations sr
+            LEFT JOIN spotify_history sh
+              ON LOWER(TRIM(sr.artist_name)) = LOWER(TRIM(sh.artist_name))
+              AND LOWER(TRIM(sr.track_name)) = LOWER(TRIM(sh.track_name))
+              AND sh.ts > sr.created_at
+            GROUP BY sr.id, sr.artist_name, sr.track_name, sr.motor, sr.created_at
+            HAVING COUNT(sh.ts) >= 2
+            ORDER BY plays_after DESC
+            LIMIT 10;
+        """)
+        with db_engine.connect() as conn:
+            hits = conn.execute(query).fetchall()
+            return [{'artist': r[0], 'track': r[1], 'plays': r[4]} for r in hits]
+    except Exception as e:
+        print(f"Error fetching feedback signals: {e}")
+        return []
+
 # Main Header
 st.title("Music Recommender")
 
@@ -511,6 +546,7 @@ elif page == "Diario de Descubrimientos":
                         badge_color = "#38bdf8"
                         if "RECONEXIÓN" in badge: badge_color = "#c084fc"
                         elif "LADO B" in badge: badge_color = "#f59e0b"
+                        elif "PUNTO CIEGO" in badge: badge_color = "#10b981"
                         
                         badge_html = f'<div style="display:inline-block; background-color:{badge_color}15; color:{badge_color}; border: 1px solid {badge_color}50; padding: 4px 10px; border-radius: 20px; font-size: 0.65rem; font-weight: 800; letter-spacing: 0.5px; margin-bottom: 8px;">{badge}</div>'
                     
@@ -683,29 +719,67 @@ elif page == "Recomendador y Playlists":
                             
                         lista_2026 = df[df['year'] == 2026]['artist_name'].dropna().unique().tolist()
                         
-                        # Calcular el Vector de Tendencia (Últimos 30 días)
+                        # Calcular el Vector de Tendencia (Últimos 30 días) con Obsession Score
                         max_date = df['ts'].max()
                         cutoff_30_days = max_date - pd.DateOffset(days=30)
                         recent_data = df[df['ts'] >= cutoff_30_days]
                         
                         if base_type == "Artistas":
-                            grouped_recent = recent_data.groupby('artist_name').agg(Play_Count=('ts', 'count')).reset_index()
-                            trend_df = grouped_recent.sort_values(by='Play_Count', ascending=False).head(n_selection)
+                            grouped_recent = recent_data.groupby('artist_name').agg(
+                                play_count=('ts', 'count'),
+                                days_active=('ts', lambda s: s.dt.date.nunique()),
+                                hours_played=('hours_played', 'sum')
+                            ).reset_index()
+                            # Descartar artistas de 1 sola escucha casual en el mes
+                            filtered_recent = grouped_recent[grouped_recent['play_count'] > 1].copy()
+                            if filtered_recent.empty:
+                                filtered_recent = grouped_recent.copy()
+                            filtered_recent['obsession_score'] = (
+                                filtered_recent['play_count'] * (1.0 + 0.5 * (filtered_recent['days_active'] - 1)) +
+                                (filtered_recent['hours_played'] * 2.0)
+                            ).round(1)
+                            trend_df = filtered_recent.sort_values(by='obsession_score', ascending=False).head(n_selection)
                         elif base_type == "Canciones":
-                            grouped_recent = recent_data.groupby(['track_name', 'artist_name']).agg(Play_Count=('ts', 'count')).reset_index()
-                            trend_df = grouped_recent.sort_values(by='Play_Count', ascending=False).head(n_selection)
+                            grouped_recent = recent_data.groupby(['track_name', 'artist_name']).agg(
+                                play_count=('ts', 'count'),
+                                days_active=('ts', lambda s: s.dt.date.nunique()),
+                                hours_played=('hours_played', 'sum')
+                            ).reset_index()
+                            filtered_recent = grouped_recent[grouped_recent['play_count'] > 1].copy()
+                            if filtered_recent.empty:
+                                filtered_recent = grouped_recent.copy()
+                            filtered_recent['obsession_score'] = (
+                                filtered_recent['play_count'] * (1.0 + 0.5 * (filtered_recent['days_active'] - 1)) +
+                                (filtered_recent['hours_played'] * 2.0)
+                            ).round(1)
+                            trend_df = filtered_recent.sort_values(by='obsession_score', ascending=False).head(n_selection)
                         else: # Álbumes
-                            grouped_recent = recent_data.groupby(['album_name', 'artist_name']).agg(Play_Count=('ts', 'count')).reset_index()
-                            trend_df = grouped_recent.sort_values(by='Play_Count', ascending=False).head(n_selection)
+                            grouped_recent = recent_data.groupby(['album_name', 'artist_name']).agg(
+                                play_count=('ts', 'count'),
+                                days_active=('ts', lambda s: s.dt.date.nunique()),
+                                hours_played=('hours_played', 'sum')
+                            ).reset_index()
+                            filtered_recent = grouped_recent[grouped_recent['play_count'] > 1].copy()
+                            if filtered_recent.empty:
+                                filtered_recent = grouped_recent.copy()
+                            filtered_recent['obsession_score'] = (
+                                filtered_recent['play_count'] * (1.0 + 0.5 * (filtered_recent['days_active'] - 1)) +
+                                (filtered_recent['hours_played'] * 2.0)
+                            ).round(1)
+                            trend_df = filtered_recent.sort_values(by='obsession_score', ascending=False).head(n_selection)
                         
-                        # Pedir candidatos a Gemini filtrando historial y recomendaciones previas
+                        # Obtener feedback histórico real cruzando saved_recommendations con spotify_history
+                        confirmed_hits = get_feedback_signals()
+                        
+                        # Pedir candidatos a Gemini filtrando historial, recomendaciones previas y con feedback real
                         candidates = get_recommendations(
                             top_n, motor, base_type, 
                             num_recommendations=25, 
                             artistas_historicos=lista_historica, 
                             artistas_2026=lista_2026, 
                             trend_df=trend_df,
-                            artistas_guardados=lista_guardados
+                            artistas_guardados=lista_guardados,
+                            confirmed_hits=confirmed_hits
                         )
                         
                         if candidates:
@@ -765,6 +839,7 @@ elif page == "Recomendador y Playlists":
                     badge_color = "#38bdf8"
                     if "RECONEXIÓN" in badge: badge_color = "#c084fc"
                     elif "LADO B" in badge: badge_color = "#f59e0b"
+                    elif "PUNTO CIEGO" in badge: badge_color = "#10b981"
                     
                     badge_html = f'<div style="display:inline-block; background-color:{badge_color}15; color:{badge_color}; border: 1px solid {badge_color}50; padding: 4px 10px; border-radius: 20px; font-size: 0.65rem; font-weight: 800; letter-spacing: 0.5px; margin-bottom: 8px;">{badge}</div>'
                 

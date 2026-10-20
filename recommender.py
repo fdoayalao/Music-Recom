@@ -7,176 +7,218 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def get_lastfm_similar_artists(artists_list, api_key, hist_lower, limit=50, forbidden_lower=None):
-    similar_artists = {} # artist_name: score
-    for artist in artists_list[:5]: # Top 5 para no saturar la API
+def normalize_name(name):
+    """Normaliza un nombre de artista para comparaciones estrictas e infalibles."""
+    n = str(name).lower().strip()
+    if n.startswith("the "):
+        n = n[4:]
+    return "".join(c for c in n if c.isalnum() or c.isspace()).strip()
+
+def get_lastfm_multi_seed_candidates(seed_artists, api_key, blocked_set, limit=35):
+    """
+    Algoritmo de Intersección Multi-Semilla (Puentes Sonoros):
+    1. Para cada artista semilla reciente, consulta 100 similares en Last.fm con su match score.
+    2. Descarta inmediatamente en Python cualquier artista que exista en blocked_set (historia + diario).
+    3. Agrupa por candidato. Si aparece en múltiples semillas, calcula:
+       affinity_score = sum(matches) * (1 + 0.35 * (count_seeds - 1))
+    4. Retorna el Top candidatos ordenados por affinity_score descendente con sus artistas puente.
+    """
+    candidates = {} # norm_name: {'name': original_name, 'matches': [], 'seeds': []}
+    
+    for seed in seed_artists[:8]:
         try:
-            # Pedimos hasta 100 artistas similares para tener mucha profundidad
-            url = f"http://ws.audioscrobbler.com/2.0/?method=artist.getsimilar&artist={requests.utils.quote(artist)}&api_key={api_key}&format=json&limit=100"
+            url = f"http://ws.audioscrobbler.com/2.0/?method=artist.getsimilar&artist={requests.utils.quote(seed)}&api_key={api_key}&format=json&limit=100"
             resp = requests.get(url, timeout=5)
             if resp.status_code == 200:
                 data = resp.json()
                 similars = data.get('similarartists', {}).get('artist', [])
-                for i, sim in enumerate(similars):
+                for sim in similars:
                     name = sim.get('name')
-                    if name:
-                        score = 100 - i
-                        similar_artists[name] = similar_artists.get(name, 0) + score
-        except Exception as e:
+                    try:
+                        match_val = float(sim.get('match', 0.0))
+                    except (ValueError, TypeError):
+                        match_val = 0.0
+                        
+                    if not name or match_val <= 0.0:
+                        continue
+                        
+                    norm = normalize_name(name)
+                    # FILTRO DURO EN PYTHON: 0 plays en historia y nunca antes recomendado
+                    if norm in blocked_set:
+                        continue
+                        
+                    if norm not in candidates:
+                        candidates[norm] = {
+                            'name': name,
+                            'matches': [],
+                            'seeds': []
+                        }
+                    candidates[norm]['matches'].append(match_val)
+                    candidates[norm]['seeds'].append(seed)
+        except Exception:
             continue
-            
-    sorted_similars = sorted(similar_artists.items(), key=lambda x: x[1], reverse=True)
-    
-    # TRUCO DEFINITIVO: Descartamos de plano a la mitad más famosa (los primeros 50)
-    if len(sorted_similars) > 50:
-        sorted_similars = sorted_similars[50:]
-    
-    def normalize_name(name):
-        n = str(name).lower().strip()
-        if n.startswith("the "): n = n[4:]
-        return "".join(c for c in n if c.isalnum() or c.isspace())
-        
-    deep_cuts_pool = []
-    blocked_pool = (hist_lower or set()) | (forbidden_lower or set())
-    for name, score in sorted_similars:
-        norm_name = normalize_name(name)
-        if norm_name not in blocked_pool:
-            deep_cuts_pool.append(name)
-            
-    # Tomamos una muestra aleatoria del pozo profundo para que Gemini no se sesgue
-    final_list = random.sample(deep_cuts_pool, min(limit, len(deep_cuts_pool))) if deep_cuts_pool else []
-    return final_list
 
-def get_recommendations(top_df, engine, base_type, num_recommendations=10, artistas_historicos=None, artistas_2026=None, trend_df=None, artistas_guardados=None):
+    scored_candidates = []
+    for norm, info in candidates.items():
+        count_seeds = len(info['seeds'])
+        affinity_score = sum(info['matches']) * (1.0 + 0.35 * (count_seeds - 1))
+        scored_candidates.append({
+            'name': info['name'],
+            'affinity_score': affinity_score,
+            'seeds': info['seeds']
+        })
+
+    scored_candidates.sort(key=lambda x: x['affinity_score'], reverse=True)
+    return scored_candidates[:limit]
+
+def get_recommendations(top_df, engine, base_type, num_recommendations=10, artistas_historicos=None, artistas_2026=None, trend_df=None, artistas_guardados=None, confirmed_hits=None):
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("No Gemini API key found. Please add GEMINI_API_KEY to your .env file.")
         
     genai.configure(api_key=api_key)
-    
-    # Usamos la versión Flash porque la cuenta es gratuita y Pro es muy restrictiva
     model = genai.GenerativeModel('gemini-3.5-flash', generation_config=genai.GenerationConfig(response_mime_type="application/json"))
 
-    # Formatear el perfil de usuario basándose en los dos DataFrames (Fundamental vs Tendencia)
     def format_df_to_string(df, type_of_base):
         if df is None or df.empty:
             return "Ninguno"
         n = len(df)
-        if type_of_base == "Artistas":
-            return f"Top {n} Artists: " + ", ".join(df['artist_name'].tolist())
-        elif type_of_base == "Canciones":
-            return f"Top {n} Songs: " + ", ".join(df.apply(lambda row: f"{row['track_name']} by {row['artist_name']}", axis=1).tolist())
-        else: # Álbumes
-            return f"Top {n} Albums: " + ", ".join(df.apply(lambda row: f"{row['album_name']} by {row['artist_name']}", axis=1).tolist())
+        if 'obsession_score' in df.columns:
+            if type_of_base == "Artistas":
+                return f"Top {n} Artistas por Obsesión Reciente (Últimos 30 días): " + ", ".join([
+                    f"{r['artist_name']} (Obsession Score: {r['obsession_score']:.1f}, {int(r['play_count'])} streams en {int(r['days_active'])} días)"
+                    for _, r in df.iterrows()
+                ])
+            elif type_of_base == "Canciones":
+                return f"Top {n} Canciones por Obsesión Reciente: " + ", ".join([
+                    f"\"{r['track_name']}\" de {r['artist_name']} (Score: {r['obsession_score']:.1f})"
+                    for _, r in df.iterrows()
+                ])
+            else:
+                return f"Top {n} Álbumes por Obsesión Reciente: " + ", ".join([
+                    f"\"{r['album_name']}\" de {r['artist_name']} (Score: {r['obsession_score']:.1f})"
+                    for _, r in df.iterrows()
+                ])
+        else:
+            if type_of_base == "Artistas":
+                return f"Top {n} Artists: " + ", ".join(df['artist_name'].tolist())
+            elif type_of_base == "Canciones":
+                return f"Top {n} Songs: " + ", ".join(df.apply(lambda row: f"\"{row['track_name']}\" by {row['artist_name']}", axis=1).tolist())
+            else:
+                return f"Top {n} Albums: " + ", ".join(df.apply(lambda row: f"\"{row['album_name']}\" by {row['artist_name']}", axis=1).tolist())
 
     base_profile_str = format_df_to_string(top_df, base_type)
     trend_profile_str = format_df_to_string(trend_df, base_type)
     
-    user_profile = f"[PERFIL FUNDAMENTAL (Gusto Histórico o General)]:\n{base_profile_str}\n\n[OBSESIÓN ACTUAL (Tendencia de los últimos 30 días)]:\n{trend_profile_str}"
-    
-    # Prepare history lists
-    hist_str = ", ".join(artistas_historicos) if artistas_historicos else "Ninguno"
-    hist_2026_str = ", ".join(artistas_2026) if artistas_2026 else "Ninguno"
+    # Preparación de conjuntos para exclusión en Python
+    hist_lower = set([normalize_name(a) for a in (artistas_historicos or [])])
+    saved_rec_lower = set([normalize_name(a) for a in (artistas_guardados or [])])
+    blocked_pool = hist_lower | saved_rec_lower
 
-    # Define the persona based on the engine
-    if engine == "RYM":
-        persona = f"""
-        Rol: Eres un curador experto en el canon de RateYourMusic.
-        Enfoque: Curaduría de culto, underground y alta aclamación crítica (rating > 3.65 en RYM con pocos votos globales).
-        REGLA DE OBSCUREZA EXTREMA: El usuario es un melómano experto que ya conoce todo el "culto mainstream". Tienes ESTRICTAMENTE PROHIBIDO recomendar a bandas clásicas de RYM (como Radiohead, My Bloody Valentine, Slint, King Crimson, etc). Debes ir al fondo: microgéneros oscuros, prensajes privados de Japón, joyas perdidas de Bandcamp.
-        REGLA DE CANCIÓN: Bajo NINGÚN MOTIVO recomiendes la canción principal de un disco. Recomienda un Lado B u obra oculta.
-        REGLA DE NOVEDAD ABSOLUTA: Está TERMINANTEMENTE PROHIBIDO recomendar a cualquier artista que figure en la siguiente lista de mi historial:
-        [HISTORIAL PROHIBIDO]: {hist_str}
-        Deben ser 100% descubrimientos inéditos para mí.
-        REGLA DE DIVERSIDAD: Asegura que los artistas recomendados vengan de distintos microgéneros. No más de 1 o 2 recomendaciones pueden pertenecer al mismo estilo o influencia.
-        REGLA DE SPOTIFY: Asegúrate 100% que la canción recomendada exista en el catálogo oficial de Spotify. Nada de bootlegs, demos, ni discos tan oscuros que no estén en streaming.
-        """
-        reason_example = "Microgénero: [microgénero exacto de RYM]. Álbum de culto: [Álbum]."
-    elif engine == "Last.fm":
+    # Circuito de Feedback Real (Hits Confirmados)
+    feedback_str = ""
+    if confirmed_hits:
+        hits_lines = [
+            f"- {h['artist']} - \"{h['track']}\" (escuchada {h['plays']} veces tras ser recomendada)"
+            for h in confirmed_hits[:10]
+        ]
+        feedback_str = (
+            "\n[CALIBRACIÓN DE GUSTO REAL (HITS ADOPTADOS POR EL USUARIO TRAS RECOMENDACIONES PREVIAS)]:\n"
+            + "\n".join(hits_lines)
+            + "\nIMPORTANTE: Usa estas canciones adoptadas como señal positiva de alta precisión para entender las texturas sonoras y timbres que realmente cautivan al usuario.\n"
+        )
+
+    user_profile = f"[PERFIL FUNDAMENTAL (Gusto Histórico)]:\n{base_profile_str}\n\n[OBSESIÓN ACTUAL (Tendencia ponderada de los últimos 30 días)]:\n{trend_profile_str}{feedback_str}"
+
+    # Lista corta de referencia para evitar repeticiones recientes en el prompt
+    recent_blocked_str = ", ".join(artistas_guardados[-35:]) if artistas_guardados else "Ninguno"
+
+    if engine == "Last.fm":
         lastfm_api_key = os.getenv("LASTFM_API_KEY")
         if not lastfm_api_key:
             raise ValueError("No se encontró LASTFM_API_KEY en .env. ¡Por favor añade tu clave de Last.fm!")
             
-        base_artists = []
+        seed_artists = []
         if trend_df is not None and not trend_df.empty:
-            base_artists = trend_df['artist_name'].unique().tolist()
+            seed_artists = trend_df['artist_name'].unique().tolist()
         elif top_df is not None and not top_df.empty:
-            base_artists = top_df['artist_name'].unique().tolist()
+            seed_artists = top_df['artist_name'].unique().tolist()
             
-        def normalize_name(name):
-            n = str(name).lower().strip()
-            if n.startswith("the "): n = n[4:]
-            return "".join(c for c in n if c.isalnum() or c.isspace())
-            
-        hist_lower = set([normalize_name(a) for a in artistas_historicos]) if artistas_historicos else set()
-        hist_2026_lower = set([normalize_name(a) for a in artistas_2026]) if artistas_2026 else set()
-        saved_rec_lower = set([normalize_name(a) for a in artistas_guardados]) if artistas_guardados else set()
+        # Algoritmo de Intersección Multi-Semilla (Puntos Ciegos)
+        top_candidates = get_lastfm_multi_seed_candidates(seed_artists, lastfm_api_key, blocked_pool, limit=35)
         
-        # RAG CALL (Extraemos hasta 80 artistas para tener un pool profundo, excluyendo los ya recomendados)
-        rag_similar = get_lastfm_similar_artists(base_artists, lastfm_api_key, hist_lower, limit=80, forbidden_lower=saved_rec_lower)
-        rag_str = ", ".join(rag_similar) if rag_similar else "Ninguno"
+        candidate_lines = [
+            f"- {c['name']} (Afinidad: {c['affinity_score']:.2f} | Puente sonoro con tus artistas: [{', '.join(c['seeds'])}])"
+            for c in top_candidates
+        ]
+        rag_str = "\n".join(candidate_lines) if candidate_lines else "Ninguno"
         
         persona = f"""
-        Rol: Eres un recomendador basado en la API oficial de similitud profunda de Last.fm.
-        Enfoque: Puntos ciegos y consenso de audiencia extraídos directamente de la base de datos de Last.fm.
-        DATOS DUROS INYECTADOS (RAG):
-        He consultado la API de Last.fm usando el Top 5 de la obsesión actual del usuario. La API devolvió esta lista OFICIAL curada de artistas altamente similares (el historial del usuario ya fue filtrado para garantizar novedad pura):
-        [ARTISTAS SIMILARES DE LAST.FM]: {rag_str}
+        Rol: Eres un recomendador basado en la API oficial de afinidad e intersección de Last.fm.
+        Enfoque: "PUNTOS CIEGOS DE ALTA AFINIDAD". Son artistas que tienen una correlación matemática altísima con la obsesión reciente del usuario, pero que él NUNCA ha escuchado (0 reproducciones en su historia).
+        
+        CANDIDATOS DETECTADOS POR INTERSECCIÓN (Pre-filtrados con 0 reproducciones y ordenados por afinidad):
+        {rag_str}
         
         TU TAREA:
-        Selecciona estrictamente a los artistas de esta lista [ARTISTAS SIMILARES DE LAST.FM] para crear tus recomendaciones.
-        REGLA DE OBSCUREZA EXTREMA: El usuario es un melómano que ya conoce a todas las bandas famosas. Todos los artistas que elijas deben ser descubrimientos frescos.
-        REGLA DE CANCIÓN: Bajo NINGÚN MOTIVO recomiendes la canción más escuchada de la banda. Debes recomendar obligatoriamente un "Lado B" o una canción oculta/profunda de la discografía del artista.
-        REGLA DE DIVERSIDAD: Selecciona artistas de géneros y sonidos diferentes dentro de la lista. Prohibido incluir más de 1 o 2 artistas que se parezcan entre sí o que provengan de la misma influencia principal.
-        REGLA DE NO REPETICIÓN: Prohibido sugerir bandas ya recomendadas en sesiones recientes: {", ".join(artistas_guardados[-40:]) if artistas_guardados else "Ninguno"}
-        REGLA DE SPOTIFY: Asegúrate 100% que la canción recomendada exista en el catálogo oficial de streaming de Spotify (evita demos de casete, bootlegs ineditos o covers en vivo raros que no estén en streaming).
+        1. Selecciona a los artistas de esta lista de [CANDIDATOS DETECTADOS POR INTERSECCIÓN] para formular tus recomendaciones.
+        2. REGLA DE PUERTA DE ENTRADA (GATEWAY TRACK): Como son puntos ciegos totales del usuario (incluso si son bandas consagradas, de culto o famosas que inexplicablemente nunca escuchó), NO recomiendes un lado B inaccesible. Recomienda su CANCIÓN MÁS REPRESENTATIVA, ICÓNICA o MEJOR PUERTA DE ENTRADA que mejor conecte con el sonido de los "artistas puente" señalados.
+        3. REGLA DEL CAMPO REASON (PUENTE SONORO OBLIGATORIO): En la explicación ("reason"), debes justificar explícitamente el PUENTE SONORO. Menciona por qué conecta con los artistas puente de la lista (ej. "Conecta la tensión rítmica de [Artista A] con la melancolía vocal de [Artista B] mediante...").
+        4. REGLA DE NO REPETICIÓN: Prohibido sugerir bandas ya recomendadas en sesiones recientes: {recent_blocked_str}
+        5. REGLA DE SPOTIFY: Asegúrate 100% de que la canción exista en el catálogo oficial de streaming de Spotify.
         """
-        reason_example = "Conexión de Last.fm: [Explicación basada en la similitud matemática de audiencia de Last.fm]."
+        reason_example = "Puente sonoro: Conecta la energía de [Artista A] y [Artista B] a través de [característica sonora]."
+        default_badge = "[PUNTO CIEGO: Alta Afinidad]"
+        
+    elif engine == "RYM":
+        persona = f"""
+        Rol: Eres un curador experto en el canon de RateYourMusic.
+        Enfoque: Curaduría de culto, underground y alta aclamación crítica (rating > 3.65 en RYM con pocos votos globales).
+        REGLA DE OBSCUREZA EXTREMA: El usuario es un melómano que ya conoce el culto evidente. Tienes ESTRICTAMENTE PROHIBIDO recomendar bandas ultra-conocidas de RYM (como Radiohead, Slint, MBV, etc.). Debes ir a microgéneros profundos y joyas escondidas.
+        REGLA DE CANCIÓN: Bajo NINGÚN MOTIVO recomiendes la canción principal de un disco. Recomienda un Lado B u obra oculta.
+        REGLA DE DIVERSIDAD: Asegura que los artistas recomendados vengan de distintos microgéneros.
+        REGLA DE NO REPETICIÓN: Prohibido sugerir artistas de sesiones recientes: {recent_blocked_str}
+        REGLA DE SPOTIFY: Asegúrate 100% que la canción recomendada exista en el catálogo de streaming de Spotify.
+        """
+        reason_example = "Microgénero: [microgénero exacto de RYM]. Álbum de culto: [Álbum]."
+        default_badge = "[NUEVO DESCUBRIMIENTO]"
+        
     elif engine == "Discogs":
         persona = f"""
         Rol: Eres un archivista e ingeniero de audio enfocado en los créditos de Discogs.
-        Enfoque: Letra chica técnica. Conexiones por productores, ingenieros de sonido, sellos independientes o músicos de sesión.
-        REGLA DE OBSCUREZA EXTREMA: Prohibido sugerir álbumes mainstream. Deben ser discos que requirieron bucear profundamente en los créditos de Discogs para encontrarlos.
-        REGLA DE CANCIÓN: Recomienda Lados B, rarezas o tomas alternativas que estén disponibles en streaming.
-        REGLA DE PROFUNDIDAD: NO puedes sugerir NADA de lo escuchado en 2026: [HISTORIAL 2026]: {hist_2026_str}
-        Si recomiendas a alguien que está en mi historial general ([HISTORIAL GENERAL]: {hist_str}), debe ser OBLIGATORIAMENTE una colaboración o proyecto paralelo. NUNCA sus discos obvios.
-        REGLA DE DIVERSIDAD: Asegura máxima variedad de artistas. No más de 1-2 recomendaciones pueden venir de la misma escena o influencia.
-        REGLA DE NO REPETICIÓN: Prohibido repetir artistas que ya fueron recomendados en sesiones recientes: {", ".join(artistas_guardados[-40:]) if artistas_guardados else "Ninguno"}
+        Enfoque: Letra chica técnica. Conexiones por productores, ingenieros de sonido, sellos independientes o músicos de sesión compartidos.
+        REGLA DE OBSCUREZA EXTREMA: Prohibido sugerir álbumes mainstream. Deben ser álbumes que requirieron bucear en los créditos técnicos de Discogs.
+        REGLA DE CANCIÓN: Recomienda Lados B, rarezas o tomas alternativas disponibles en streaming.
+        REGLA DE DIVERSIDAD: Asegura máxima variedad de estilos.
+        REGLA DE NO REPETICIÓN: Prohibido sugerir artistas de sesiones recientes: {recent_blocked_str}
         REGLA DE SPOTIFY: Asegúrate 100% que la canción recomendada exista en el catálogo oficial de streaming de Spotify.
         """
-        reason_example = "Año: [año]. Conexión: [Crédito exacto, ej: Producido por X / Mismo bajista de sesión que grabó en Y]."
+        reason_example = "Año: [año]. Conexión: [Crédito exacto, ej: Producido por X / Mismo baterista de sesión que grabó en Y]."
+        default_badge = "[LADO B / CRÉDITOS]"
+        
     else:
         persona = "Act as a music recommender."
-        reason_example = "Recomendado por similitud."
-
-    recent_blocked_str = ", ".join(artistas_guardados[-50:]) if artistas_guardados else "Ninguno"
+        reason_example = "Recomendado por afinidad."
+        default_badge = "[NUEVO DESCUBRIMIENTO]"
 
     prompt = f"""
     {persona}
     
     INSTRUCCIÓN DE CONTRASTE TEMPORAL:
-    Analiza el PERFIL FUNDAMENTAL para entender el ADN musical del usuario, pero usa la OBSESIÓN ACTUAL para capturar su estado de ánimo reciente. Tus recomendaciones y tus explicaciones ("reason") deben tratar de tender un puente entre sus gustos históricos y su vibra actual, o profundizar fuertemente en su obsesión reciente de una manera narrativa.
+    Analiza el PERFIL FUNDAMENTAL para entender el ADN musical del usuario, pero usa la OBSESIÓN ACTUAL para capturar su estado de ánimo reciente. Tus recomendaciones y tus explicaciones ("reason") deben tender un puente entre sus gustos históricos y su vibra reciente.
     
-    [ARTISTAS PROHIBIDOS POR REPETICIÓN RECIENTE]:
-    {recent_blocked_str}
-    
-    REGLA GENERAL ESTRICTA: Está TERMINANTEMENTE PROHIBIDO volver a recomendar a cualquier banda que figure en [ARTISTAS PROHIBIDOS POR REPETICIÓN RECIENTE] (como The Blue Nile, The Sound, Bark Psychosis, etc.). El usuario quiere variedad y descubrir artistas distintos.
-    
-    Mis preferencias actuales son:
+    Mis preferencias y obsesiones actuales son:
     {user_profile}
     
-    Con base en estas reglas, genera una lista de al menos {max(num_recommendations * 2, 25)} recomendaciones musicales altamente relevantes. Genera opciones variadas para garantizar que cumplan los filtros de streaming.
+    Con base en estas reglas, genera una lista de 35 recomendaciones musicales candidatas altamente relevantes. Genera un pool amplio para que el sistema valide la existencia en streaming.
     
     IMPORTANTE: Siempre recomienda una canción específica en el campo 'item'.
     
     Devuelve la salida ESTRICTAMENTE como un JSON array de objetos con las siguientes claves:
     - "artist": El nombre del artista.
     - "item": El nombre de la canción.
-    - "reason": Una explicación corta en español basada en tu rol. Ejemplo: "{reason_example}"
-    - "badge": Una etiqueta visual. Elige EXACTAMENTE UNA de estas 3 opciones dependiendo del caso:
-        1. "[NUEVO DESCUBRIMIENTO]" (si el artista no estaba en mi [HISTORIAL GENERAL])
-        2. "[RECONEXIÓN: No escuchado en 2026]" (si es un artista de mi pasado que no está en [HISTORIAL 2026])
-        3. "[LADO B / CRÉDITOS]" (si es una rareza de un artista conocido vía Discogs).
+    - "reason": Una explicación detallada en español basada en tu rol. Ejemplo: "{reason_example}"
+    - "badge": Una etiqueta visual. Elige la más pertinente: "{default_badge}", "[NUEVO DESCUBRIMIENTO]", "[RECONEXIÓN]" o "[LADO B / CRÉDITOS]".
     
     Do not output any markdown formatting like ```json or anything else. Just the raw JSON array.
     """
@@ -192,17 +234,7 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
             json_str = text[start_idx:end_idx+1]
             data = json.loads(json_str)
             
-            # FILTRO ESTRICTO EN PYTHON (Para mitigar alucinaciones y repeticiones del LLM)
-            def normalize_name(name):
-                n = str(name).lower().strip()
-                if n.startswith("the "):
-                    n = n[4:]
-                return "".join(c for c in n if c.isalnum() or c.isspace())
-                
-            hist_lower = set([normalize_name(a) for a in artistas_historicos]) if artistas_historicos else set()
-            hist_2026_lower = set([normalize_name(a) for a in artistas_2026]) if artistas_2026 else set()
-            saved_rec_lower = set([normalize_name(a) for a in artistas_guardados]) if artistas_guardados else set()
-            
+            # FILTRO DURO EN PYTHON: Excluye todo lo escuchado en la historia y en el diario
             filtered_data = []
             seen_artists_in_batch = set()
             
@@ -210,33 +242,22 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
                 raw_artist = str(rec.get('artist', ''))
                 artist_norm = normalize_name(raw_artist)
                 
-                # Prohibido repetir artistas recomendados en sesiones recientes
-                if artist_norm in saved_rec_lower:
+                # Descartar si ya fue escuchado alguna vez o recomendado previamente
+                if artist_norm in blocked_pool:
                     continue
-                # Prohibido repetir el mismo artista dentro de la misma tanda
+                # Descartar duplicados en la misma tanda
                 if artist_norm in seen_artists_in_batch:
                     continue
-                
-                if engine == "RYM":
-                    if artist_norm in hist_lower:
-                        continue # Regla estricta: NO puede estar en el historial
-                elif engine == "Last.fm":
-                    if artist_norm in hist_2026_lower:
-                        continue # Regla estricta: NO puede estar en 2026
-                elif engine == "Discogs":
-                    if artist_norm in hist_2026_lower:
-                        continue # Regla estricta: NO puede estar en 2026
-                        
+                    
                 filtered_data.append(rec)
                 seen_artists_in_batch.add(artist_norm)
-                if len(filtered_data) == max(num_recommendations, 25):
+                if len(filtered_data) == 25:
                     break
                     
             return filtered_data
         else:
             print("No se encontró un array JSON en la respuesta de Gemini.")
             print(f"Respuesta bruta: {text}")
-            return []
             return []
             
     except Exception as e:
