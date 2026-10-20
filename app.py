@@ -796,7 +796,18 @@ elif page == "Recomendador y Playlists":
                             # Valida que existan 100% en Spotify, coincidan en artista y no estén en tu biblioteca
                             token_info = st.session_state.get('spotify_token')
                             if filter_unsaved_tracks:
-                                recs = filter_unsaved_tracks(token_info, candidates, target_count=10)
+                                try:
+                                    sig_filter = inspect.signature(filter_unsaved_tracks)
+                                    has_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig_filter.parameters.values())
+                                    if 'target_count' in sig_filter.parameters or has_kw:
+                                        recs = filter_unsaved_tracks(token_info, candidates, target_count=10)
+                                    else:
+                                        recs = filter_unsaved_tracks(token_info, candidates)[:10]
+                                except Exception:
+                                    try:
+                                        recs = filter_unsaved_tracks(token_info, candidates)[:10]
+                                    except Exception:
+                                        recs = candidates[:10]
                             else:
                                 recs = candidates[:10]
                                 

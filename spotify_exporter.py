@@ -251,7 +251,7 @@ def find_verified_spotify_track(sp, artist, track):
             continue
     return None
 
-def filter_and_verify_tracks(token_info, tracks_info, target_count=10):
+def filter_and_verify_tracks(token_info, tracks_info, target_count=10, *args, **kwargs):
     """
     Toma candidatos de canciones y:
     1. Verifica que existan 100% en el catálogo de Spotify con coincidencia real de artista y canción.
@@ -310,4 +310,8 @@ def filter_and_verify_tracks(token_info, tracks_info, target_count=10):
             
     return verified_tracks
 
-filter_unsaved_tracks = filter_and_verify_tracks
+def filter_unsaved_tracks(token_info, tracks_info, *args, **kwargs):
+    target_count = kwargs.get('target_count', 10)
+    if args:
+        target_count = args[0]
+    return filter_and_verify_tracks(token_info, tracks_info, target_count=target_count)
