@@ -251,7 +251,7 @@ def get_recommendations(top_df, engine, base_type, num_recommendations=10, artis
                     
                 filtered_data.append(rec)
                 seen_artists_in_batch.add(artist_norm)
-                if len(filtered_data) == 25:
+                if len(filtered_data) >= 30:
                     break
                     
             return filtered_data

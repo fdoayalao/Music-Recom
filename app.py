@@ -778,7 +778,7 @@ elif page == "Recomendador y Playlists":
                             'top_df': top_n,
                             'engine': motor,
                             'base_type': base_type,
-                            'num_recommendations': 25,
+                            'num_recommendations': 30,
                             'artistas_historicos': lista_historica,
                             'artistas_2026': lista_2026,
                             'trend_df': trend_df
