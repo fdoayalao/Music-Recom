@@ -649,56 +649,85 @@ elif page == "Recomendador y Playlists":
     with tabB:
         st.subheader("Recomendaciones Orgánicas Multi-Motor")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            base_type = st.selectbox("Basar recomendaciones en:", ["Artistas", "Canciones", "Álbumes"])
-        with col2:
-            n_selection = st.selectbox("Cantidad a analizar (N):", [15, 30, 50, 100])
+        rec_mode = st.radio(
+            "Modo de Exploración:",
+            ["Mi Perfil y Tendencias", "Por Artista Específico (Semilla)"],
+            horizontal=True
+        )
         
-        if base_type == "Artistas":
-            grouped = df.groupby('artist_name').agg(
-                Play_Count=('ts', 'count')
-            ).reset_index()
-            top_n = grouped.sort_values(by='Play_Count', ascending=False).head(n_selection)
-            cols_to_show = ['artist_name', 'Play_Count']
-        elif base_type == "Canciones":
-            grouped = df.groupby(['track_name', 'artist_name']).agg(
-                Play_Count=('ts', 'count')
-            ).reset_index()
-            top_n = grouped.sort_values(by='Play_Count', ascending=False).head(n_selection)
-            cols_to_show = ['track_name', 'artist_name', 'Play_Count']
-        else: # Álbumes
-            grouped = df.groupby(['album_name', 'artist_name']).agg(
-                Play_Count=('ts', 'count')
-            ).reset_index()
-            top_n = grouped.sort_values(by='Play_Count', ascending=False).head(n_selection)
-            cols_to_show = ['album_name', 'artist_name', 'Play_Count']
+        top_n = None
+        trend_df = None
+        base_type = "Artistas"
+        seed_artist = ""
+        
+        if rec_mode == "Mi Perfil y Tendencias":
+            col1, col2 = st.columns(2)
+            with col1:
+                base_type = st.selectbox("Basar recomendaciones en:", ["Artistas", "Canciones", "Álbumes"])
+            with col2:
+                n_selection = st.selectbox("Cantidad a analizar (N):", [15, 30, 50, 100])
             
-        # Hacer que el índice sea un ranking (1, 2, 3...)
-        top_n.index = range(1, len(top_n) + 1)
-            
-        with st.expander(f"Ver tu Top {n_selection} de {base_type} ({selected_period})"):
-            render_glass_table(top_n[cols_to_show])
+            if base_type == "Artistas":
+                grouped = df.groupby('artist_name').agg(
+                    Play_Count=('ts', 'count')
+                ).reset_index()
+                top_n = grouped.sort_values(by='Play_Count', ascending=False).head(n_selection)
+                cols_to_show = ['artist_name', 'Play_Count']
+            elif base_type == "Canciones":
+                grouped = df.groupby(['track_name', 'artist_name']).agg(
+                    Play_Count=('ts', 'count')
+                ).reset_index()
+                top_n = grouped.sort_values(by='Play_Count', ascending=False).head(n_selection)
+                cols_to_show = ['track_name', 'artist_name', 'Play_Count']
+            else: # Álbumes
+                grouped = df.groupby(['album_name', 'artist_name']).agg(
+                    Play_Count=('ts', 'count')
+                ).reset_index()
+                top_n = grouped.sort_values(by='Play_Count', ascending=False).head(n_selection)
+                cols_to_show = ['album_name', 'artist_name', 'Play_Count']
+                
+            # Hacer que el índice sea un ranking (1, 2, 3...)
+            top_n.index = range(1, len(top_n) + 1)
+                
+            with st.expander(f"Ver tu Top {n_selection} de {base_type} ({selected_period})"):
+                render_glass_table(top_n[cols_to_show])
+        else:
+            seed_artist = st.text_input(
+                "Artista Semilla / Referencia:",
+                placeholder="Ej: Tom Misch, Khruangbin, Men I Trust, BADBADNOTGOOD, Jordan Rakei...",
+                help="Ingresa el nombre de cualquier artista para descubrir 10 canciones afines a su sonido que nunca hayas escuchado."
+            )
             
         motor_options = {
-            "RYM (Joyas de nicho y aclamación crítica)": "RYM",
+            "Curador Inteligente (Híbrido Universal)": "Universal",
             "Last.fm (Conexiones de audiencia y escena)": "Last.fm",
+            "RYM (Joyas de nicho y aclamación crítica)": "RYM",
             "Discogs (Créditos, producción y sonido de estudio)": "Discogs"
         }
         motor_selection = st.selectbox("Elige el Enfoque (Motor de Recomendación)", list(motor_options.keys()))
         motor = motor_options[motor_selection]
         
         st.info({
-            "RYM": "🧠 **RYM:** Enfoque en Joyas de nicho y aclamación crítica de microgéneros.",
-            "Last.fm": "🌐 **Last.fm:** Conexiones de audiencia y 'similar artists' de la escena.",
-            "Discogs": "🎛️ **Discogs:** Recomendaciones por producción, sello o sonido de estudio."
+            "Universal": "✨ **Curador Inteligente:** Análisis sonoro completo (groove, producción, texturas, dinámicas vocales e influencias) sintetizando lo mejor de todos los enfoques.",
+            "Last.fm": "🌐 **Last.fm:** Conexiones de audiencia y escena musical mediante la API oficial de Last.fm.",
+            "RYM": "🧠 **RYM:** Enfoque en joyas de nicho y aclamación crítica de microgéneros underground.",
+            "Discogs": "🎛️ **Discogs:** Recomendaciones por producción de estudio, ingenieros de sonido, músicos de sesión o sellos discográficos."
         }[motor])
         
         if st.button("Generar Recomendaciones con Gemini"):
-            if get_recommendations:
-                spinner_text = "Gemini está analizando tu perfil y cruzando con tu historial..."
-                if motor == "Last.fm":
-                    spinner_text = "Consultando en vivo la API de Last.fm y conectando con Gemini..."
+            if rec_mode == "Por Artista Específico (Semilla)" and not seed_artist.strip():
+                st.warning("Por favor ingresa el nombre de un artista semilla antes de generar recomendaciones.")
+            elif get_recommendations:
+                if rec_mode == "Por Artista Específico (Semilla)":
+                    if motor == "Last.fm":
+                        spinner_text = f"Consultando la API de Last.fm para '{seed_artist.strip()}' y cruzando con tu historial..."
+                    else:
+                        spinner_text = f"Gemini está explorando el universo sonoro de '{seed_artist.strip()}' y verificando exclusividad..."
+                else:
+                    if motor == "Last.fm":
+                        spinner_text = "Consultando en vivo la API de Last.fm y conectando con Gemini..."
+                    else:
+                        spinner_text = "Gemini está analizando tu perfil y cruzando con tu historial..."
                     
                 with st.spinner(spinner_text):
                     try:
@@ -719,54 +748,56 @@ elif page == "Recomendador y Playlists":
                             
                         lista_2026 = df[df['year'] == 2026]['artist_name'].dropna().unique().tolist()
                         
-                        # Calcular el Vector de Tendencia (Últimos 30 días) con Obsession Score
-                        max_date = df['ts'].max()
-                        cutoff_30_days = max_date - pd.DateOffset(days=30)
-                        recent_data = df[df['ts'] >= cutoff_30_days]
-                        
-                        if base_type == "Artistas":
-                            grouped_recent = recent_data.groupby('artist_name').agg(
-                                play_count=('ts', 'count'),
-                                days_active=('ts', lambda s: s.dt.date.nunique()),
-                                hours_played=('hours_played', 'sum')
-                            ).reset_index()
-                            # Descartar artistas de 1 sola escucha casual en el mes
-                            filtered_recent = grouped_recent[grouped_recent['play_count'] > 1].copy()
-                            if filtered_recent.empty:
-                                filtered_recent = grouped_recent.copy()
-                            filtered_recent['obsession_score'] = (
-                                filtered_recent['play_count'] * (1.0 + 0.5 * (filtered_recent['days_active'] - 1)) +
-                                (filtered_recent['hours_played'] * 2.0)
-                            ).round(1)
-                            trend_df = filtered_recent.sort_values(by='obsession_score', ascending=False).head(n_selection)
-                        elif base_type == "Canciones":
-                            grouped_recent = recent_data.groupby(['track_name', 'artist_name']).agg(
-                                play_count=('ts', 'count'),
-                                days_active=('ts', lambda s: s.dt.date.nunique()),
-                                hours_played=('hours_played', 'sum')
-                            ).reset_index()
-                            filtered_recent = grouped_recent[grouped_recent['play_count'] > 1].copy()
-                            if filtered_recent.empty:
-                                filtered_recent = grouped_recent.copy()
-                            filtered_recent['obsession_score'] = (
-                                filtered_recent['play_count'] * (1.0 + 0.5 * (filtered_recent['days_active'] - 1)) +
-                                (filtered_recent['hours_played'] * 2.0)
-                            ).round(1)
-                            trend_df = filtered_recent.sort_values(by='obsession_score', ascending=False).head(n_selection)
-                        else: # Álbumes
-                            grouped_recent = recent_data.groupby(['album_name', 'artist_name']).agg(
-                                play_count=('ts', 'count'),
-                                days_active=('ts', lambda s: s.dt.date.nunique()),
-                                hours_played=('hours_played', 'sum')
-                            ).reset_index()
-                            filtered_recent = grouped_recent[grouped_recent['play_count'] > 1].copy()
-                            if filtered_recent.empty:
-                                filtered_recent = grouped_recent.copy()
-                            filtered_recent['obsession_score'] = (
-                                filtered_recent['play_count'] * (1.0 + 0.5 * (filtered_recent['days_active'] - 1)) +
-                                (filtered_recent['hours_played'] * 2.0)
-                            ).round(1)
-                            trend_df = filtered_recent.sort_values(by='obsession_score', ascending=False).head(n_selection)
+                        # Calcular el Vector de Tendencia (Últimos 30 días) solo en modo Perfil
+                        if rec_mode == "Mi Perfil y Tendencias":
+                            max_date = df['ts'].max()
+                            cutoff_30_days = max_date - pd.DateOffset(days=30)
+                            recent_data = df[df['ts'] >= cutoff_30_days]
+                            
+                            if base_type == "Artistas":
+                                grouped_recent = recent_data.groupby('artist_name').agg(
+                                    play_count=('ts', 'count'),
+                                    days_active=('ts', lambda s: s.dt.date.nunique()),
+                                    hours_played=('hours_played', 'sum')
+                                ).reset_index()
+                                filtered_recent = grouped_recent[grouped_recent['play_count'] > 1].copy()
+                                if filtered_recent.empty:
+                                    filtered_recent = grouped_recent.copy()
+                                filtered_recent['obsession_score'] = (
+                                    filtered_recent['play_count'] * (1.0 + 0.5 * (filtered_recent['days_active'] - 1)) +
+                                    (filtered_recent['hours_played'] * 2.0)
+                                ).round(1)
+                                trend_df = filtered_recent.sort_values(by='obsession_score', ascending=False).head(n_selection)
+                            elif base_type == "Canciones":
+                                grouped_recent = recent_data.groupby(['track_name', 'artist_name']).agg(
+                                    play_count=('ts', 'count'),
+                                    days_active=('ts', lambda s: s.dt.date.nunique()),
+                                    hours_played=('hours_played', 'sum')
+                                ).reset_index()
+                                filtered_recent = grouped_recent[grouped_recent['play_count'] > 1].copy()
+                                if filtered_recent.empty:
+                                    filtered_recent = grouped_recent.copy()
+                                filtered_recent['obsession_score'] = (
+                                    filtered_recent['play_count'] * (1.0 + 0.5 * (filtered_recent['days_active'] - 1)) +
+                                    (filtered_recent['hours_played'] * 2.0)
+                                ).round(1)
+                                trend_df = filtered_recent.sort_values(by='obsession_score', ascending=False).head(n_selection)
+                            else: # Álbumes
+                                grouped_recent = recent_data.groupby(['album_name', 'artist_name']).agg(
+                                    play_count=('ts', 'count'),
+                                    days_active=('ts', lambda s: s.dt.date.nunique()),
+                                    hours_played=('hours_played', 'sum')
+                                ).reset_index()
+                                filtered_recent = grouped_recent[grouped_recent['play_count'] > 1].copy()
+                                if filtered_recent.empty:
+                                    filtered_recent = grouped_recent.copy()
+                                filtered_recent['obsession_score'] = (
+                                    filtered_recent['play_count'] * (1.0 + 0.5 * (filtered_recent['days_active'] - 1)) +
+                                    (filtered_recent['hours_played'] * 2.0)
+                                ).round(1)
+                                trend_df = filtered_recent.sort_values(by='obsession_score', ascending=False).head(n_selection)
+                        else:
+                            trend_df = None
                         
                         # Obtener feedback histórico real cruzando saved_recommendations con spotify_history
                         confirmed_hits = get_feedback_signals()
@@ -781,7 +812,8 @@ elif page == "Recomendador y Playlists":
                             'num_recommendations': 30,
                             'artistas_historicos': lista_historica,
                             'artistas_2026': lista_2026,
-                            'trend_df': trend_df
+                            'trend_df': trend_df,
+                            'seed_artist': seed_artist.strip() if rec_mode == "Por Artista Específico (Semilla)" else None
                         }
                         has_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
                         if 'artistas_guardados' in sig.parameters or has_kwargs:
@@ -813,6 +845,7 @@ elif page == "Recomendador y Playlists":
                                 
                             st.session_state['current_recs'] = recs
                             st.session_state['current_motor'] = motor
+                            st.session_state['current_seed_artist'] = seed_artist.strip() if rec_mode == "Por Artista Específico (Semilla)" else None
                             
                             # Guardar en Supabase para el Diario de Descubrimientos
                             if engine and recs:
@@ -837,15 +870,20 @@ elif page == "Recomendador y Playlists":
                                     
                             st.success(f"¡{len(recs)} recomendaciones 100% verificadas en Spotify, libres de repetición y guardadas!")
                         else:
-                            st.error("No se pudieron generar recomendaciones. Revisa tu API key en .env y que tengas conexión.")
+                            st.warning("No se encontraron candidatos nuevos que no estuvieran ya en tu historial. Prueba seleccionando otro motor o período.")
                     except Exception as e:
                         st.error(f"Error generando recomendaciones: {e}")
             else:
                 st.error("Módulo de recomendaciones no disponible. Faltan librerías.")
                 
         if 'current_recs' in st.session_state:
-            st.markdown(f"### Resultados (Motor: {st.session_state.get('current_motor', '')})")
             motor = st.session_state.get('current_motor', '')
+            cur_seed = st.session_state.get('current_seed_artist')
+            if cur_seed:
+                st.markdown(f"### Resultados para *{cur_seed}* (Motor: {motor})")
+            else:
+                st.markdown(f"### Resultados (Motor: {motor})")
+                
             for idx, rec in enumerate(st.session_state['current_recs']):
                 artist = rec.get('artist', 'Desconocido')
                 track = rec.get('item', 'Desconocido')
@@ -860,11 +898,14 @@ elif page == "Recomendador y Playlists":
                     if "RECONEXIÓN" in badge: badge_color = "#c084fc"
                     elif "LADO B" in badge: badge_color = "#f59e0b"
                     elif "PUNTO CIEGO" in badge: badge_color = "#10b981"
+                    elif "CURADURÍA" in badge or "UNIVERSAL" in badge: badge_color = "#ec4899"
                     
                     badge_html = f'<div style="display:inline-block; background-color:{badge_color}15; color:{badge_color}; border: 1px solid {badge_color}50; padding: 4px 10px; border-radius: 20px; font-size: 0.65rem; font-weight: 800; letter-spacing: 0.5px; margin-bottom: 8px;">{badge}</div>'
                 
                 cover_img = f'<img src="{cover_url}" style="width: 56px; height: 56px; border-radius: 8px; margin-right: 14px; float: left; object-fit: cover; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">' if cover_url else ''
                 title_display = f'<a href="{spotify_url}" target="_blank" style="color:white; text-decoration:none;">{track} ↗</a>' if spotify_url else track
+                
+                pill_info = f"/ MOTOR: {motor} · SEMILLA: {cur_seed} /" if cur_seed else f"/ MOTOR: {motor} /"
                 
                 # HTML template para la tarjeta de recomendación
                 card_html = f"""
@@ -879,7 +920,7 @@ elif page == "Recomendador y Playlists":
                         </div>
                     </div>
                     <div style="clear: both; margin-top: 10px;"></div>
-                    <div class="rec-pills">/ MOTOR: {motor} /</div>
+                    <div class="rec-pills">{pill_info}</div>
                     <div class="rec-reason">"{reason}"</div>
                 </div>
                 """
@@ -895,8 +936,13 @@ elif page == "Recomendador y Playlists":
                     with st.spinner("Creando playlist..."):
                         try:
                             m = st.session_state.get('current_motor', '')
-                            p_name = f"Recomendaciones {m}"
-                            p_desc = f"Descubrimientos generados por IA usando el motor de {m}."
+                            cur_seed = st.session_state.get('current_seed_artist')
+                            if cur_seed:
+                                p_name = f"Descubrimientos: {cur_seed} ({m})"
+                                p_desc = f"Descubrimientos sonoros afines a {cur_seed} generados por IA (Motor: {m})."
+                            else:
+                                p_name = f"Recomendaciones {m}"
+                                p_desc = f"Descubrimientos generados por IA usando el motor de {m}."
                             url = create_spotify_playlist(p_name, p_desc, st.session_state['current_recs'], st.session_state['spotify_token'], motor=m)
                             if url:
                                 st.success(f"¡Playlist creada con éxito! [Abrir en Spotify]({url})")

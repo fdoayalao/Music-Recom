@@ -148,8 +148,8 @@ def create_spotify_playlist(playlist_name, description, tracks_info, token_info,
                 # Coincidencia exacta con el nombre buscado
                 if p_name_lower == playlist_name.strip().lower():
                     exact_matches.append(pl)
-                # Coincidencia por motor (ej: "Recomendaciones Last.fm - Octubre 2026", "Recomendaciones Last.fm", etc.)
-                elif target_motor and target_motor in p_name_lower:
+                # Coincidencia por motor sólo si no es una playlist específica de artista semilla ("Descubrimientos:")
+                elif target_motor and target_motor in p_name_lower and not playlist_name.strip().lower().startswith("descubrimientos:"):
                     # Dar prioridad a las que dicen "recomendaciones"
                     if "recomendaciones" in p_name_lower:
                         motor_matches.insert(0, pl)
