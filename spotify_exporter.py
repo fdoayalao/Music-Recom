@@ -42,7 +42,20 @@ def get_token(code):
     return get_spotify_oauth().get_access_token(code, as_dict=True)
 
 def get_cached_token():
-    return get_spotify_oauth().get_cached_token()
+    auth = get_spotify_oauth()
+    token = auth.get_cached_token()
+    if not token:
+        try:
+            import json
+            cache_path = ".spotify_cache"
+            if os.path.exists(cache_path):
+                with open(cache_path) as f:
+                    data = json.load(f)
+                    if data and isinstance(data, dict) and data.get('access_token'):
+                        token = data
+        except Exception:
+            pass
+    return token
 
 def get_currently_playing(token_info):
     """
@@ -156,8 +169,20 @@ def create_spotify_playlist(playlist_name, description, tracks_info, token_info=
     target_motor = (motor or "").strip().lower()
     p_name_clean = playlist_name.strip().lower()
     is_seed_playlist = p_name_clean.startswith("descubrimientos:")
-    seed_name = playlist_name.split(":", 1)[1].strip().lower() if is_seed_playlist else ""
     
+    # Normalización infalible para playlists de artista semilla
+    import re
+    def normalize_seed_title(name_str):
+        s = str(name_str).lower().strip()
+        if s.startswith("descubrimientos:"):
+            s = s[len("descubrimientos:"):].strip()
+        elif s.startswith("descubrimientos"):
+            s = s[len("descubrimientos"):].strip()
+        s = re.sub(r'\(.*?\)', '', s)
+        return "".join(c for c in s if c.isalnum()).strip()
+
+    target_seed_norm = normalize_seed_title(playlist_name) if is_seed_playlist else ""
+
     exact_matches = []
     seed_matches = []
     motor_matches = []
@@ -165,27 +190,29 @@ def create_spotify_playlist(playlist_name, description, tracks_info, token_info=
     while playlists:
         for pl in playlists.get('items', []):
             if pl.get('owner', {}).get('id') == user_id:
-                p_name_lower = pl.get('name', '').strip().lower()
+                p_name_raw = pl.get('name', '').strip()
+                p_name_lower = p_name_raw.lower()
                 
-                # 1. Coincidencia exacta con el nombre buscado
-                if p_name_lower == p_name_clean:
+                # 1. Coincidencia normalizada de artista semilla (ignora mayúsculas, comas y sufijos como (Universal))
+                if is_seed_playlist and target_seed_norm:
+                    pl_seed_norm = normalize_seed_title(p_name_raw)
+                    if pl_seed_norm == target_seed_norm:
+                        seed_matches.append(pl)
+                # 2. Coincidencia exacta de texto
+                elif p_name_lower == p_name_clean:
                     exact_matches.append(pl)
-                # 2. Si es playlist de artista semilla, coincide si empieza con "descubrimientos: {seed}"
-                # (reutiliza playlists previas incluso si tenían sufijos como " (Universal)")
-                elif is_seed_playlist and seed_name and p_name_lower.startswith(f"descubrimientos: {seed_name}"):
-                    seed_matches.append(pl)
-                # 3. Coincidencia por motor sólo si no es una playlist específica de artista semilla
+                # 3. Coincidencia por motor sólo si no es una playlist de artista semilla
                 elif target_motor and target_motor in p_name_lower and not is_seed_playlist:
                     if "recomendaciones" in p_name_lower:
                         motor_matches.insert(0, pl)
                     else:
                         motor_matches.append(pl)
                         
-        if exact_matches or seed_matches or motor_matches:
-            if exact_matches:
-                chosen = exact_matches[0]
-            elif seed_matches:
+        if seed_matches or exact_matches or motor_matches:
+            if seed_matches:
                 chosen = seed_matches[0]
+            elif exact_matches:
+                chosen = exact_matches[0]
             else:
                 chosen = motor_matches[0]
                 
@@ -232,10 +259,10 @@ def create_spotify_playlist(playlist_name, description, tracks_info, token_info=
     # Obtener los URIs ya presentes en la playlist para evitar agregar canciones duplicadas
     existing_uris = set()
     try:
-        results = sp.playlist_items(playlist_id, fields='items.track.uri,next', additional_types=['track'], limit=100)
+        results = sp.playlist_items(playlist_id, limit=100)
         while results:
             for item in results.get('items', []):
-                t = item.get('track')
+                t = item.get('item') or item.get('track')
                 if t and t.get('uri'):
                     existing_uris.add(t['uri'])
             if results.get('next'):
