@@ -823,26 +823,58 @@ elif page == "Recomendador y Playlists":
                             
                         candidates = get_recommendations(**rec_kwargs)
                         
-                        if candidates:
-                            # ESCUDO DE BIBLIOTECA Y VERIFICACIÓN SPOTIFY:
-                            # Valida que existan 100% en Spotify, coincidan en artista y no estén en tu biblioteca
-                            token_info = st.session_state.get('spotify_token')
-                            if filter_unsaved_tracks:
-                                try:
-                                    sig_filter = inspect.signature(filter_unsaved_tracks)
-                                    has_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig_filter.parameters.values())
-                                    if 'target_count' in sig_filter.parameters or has_kw:
-                                        recs = filter_unsaved_tracks(token_info, candidates, target_count=10)
-                                    else:
-                                        recs = filter_unsaved_tracks(token_info, candidates)[:10]
-                                except Exception:
-                                    try:
-                                        recs = filter_unsaved_tracks(token_info, candidates)[:10]
-                                    except Exception:
-                                        recs = candidates[:10]
-                            else:
+                        recs = []
+                        token_info = st.session_state.get('spotify_token')
+                        clean_seed = seed_artist.strip() if rec_mode == "Por Artista Específico (Semilla)" else None
+                        blocked_pool_set = set(lista_historica or []) | set(lista_guardados or [])
+
+                        if candidates and filter_unsaved_tracks:
+                            try:
+                                recs = filter_unsaved_tracks(
+                                    token_info, 
+                                    candidates, 
+                                    target_count=10,
+                                    blocked_pool=blocked_pool_set,
+                                    seed_artist=clean_seed,
+                                    existing_artists=[]
+                                )
+                            except Exception as ex_filter:
+                                print(f"Error filtering tracks: {ex_filter}")
                                 recs = candidates[:10]
+                        elif candidates:
+                            recs = candidates[:10]
+                            
+                        # BUCLE DE AUTO-RECUPERACIÓN: Garantía Innegociable de 10 Canciones
+                        if len(recs) < 10 and get_recommendations:
+                            seen_artists_so_far = set(
+                                [r.get('artist', '') for r in recs if r.get('artist')] + 
+                                [c.get('artist', '') for c in (candidates or []) if c.get('artist')]
+                            )
+                            needed = 10 - len(recs)
+                            try:
+                                recovery_kwargs = dict(rec_kwargs)
+                                recovery_kwargs['exclude_artists'] = seen_artists_so_far
+                                recovery_kwargs['num_recommendations'] = 30
+                                recovery_candidates = get_recommendations(**recovery_kwargs)
+                                if recovery_candidates and filter_unsaved_tracks:
+                                    existing_artists_list = [r.get('artist') for r in recs if r.get('artist')]
+                                    more_recs = filter_unsaved_tracks(
+                                        token_info, 
+                                        recovery_candidates, 
+                                        target_count=needed,
+                                        blocked_pool=blocked_pool_set,
+                                        seed_artist=clean_seed,
+                                        existing_artists=existing_artists_list
+                                    )
+                                    for mr in more_recs:
+                                        if len(recs) < 10:
+                                            mr_art = mr.get('artist', '').strip().lower()
+                                            if not any(r.get('artist', '').strip().lower() == mr_art for r in recs):
+                                                recs.append(mr)
+                            except Exception as ex_recovery:
+                                print(f"Aviso en pasada de auto-recuperación: {ex_recovery}")
                                 
+                        if recs:
                             st.session_state['current_recs'] = recs
                             st.session_state['current_motor'] = motor
                             st.session_state['current_seed_artist'] = seed_artist.strip() if rec_mode == "Por Artista Específico (Semilla)" else None
@@ -938,13 +970,13 @@ elif page == "Recomendador y Playlists":
                             m = st.session_state.get('current_motor', '')
                             cur_seed = st.session_state.get('current_seed_artist')
                             if cur_seed:
-                                p_name = f"Descubrimientos: {cur_seed} ({m})"
-                                p_desc = f"Descubrimientos sonoros afines a {cur_seed} generados por IA (Motor: {m})."
+                                p_name = f"Descubrimientos: {cur_seed.strip()}"
+                                p_desc = f"Descubrimientos musicales afines a {cur_seed.strip()} generados por IA."
                             else:
                                 p_name = f"Recomendaciones {m}"
                                 p_desc = f"Descubrimientos generados por IA usando el motor de {m}."
                             url = create_spotify_playlist(p_name, p_desc, st.session_state['current_recs'], st.session_state['spotify_token'], motor=m)
                             if url:
-                                st.success(f"¡Playlist creada con éxito! [Abrir en Spotify]({url})")
+                                st.success(f"¡Playlist actualizada con éxito en Spotify! [Abrir '{p_name}']({url})")
                         except Exception as e:
                             st.error(f"Error exportando a Spotify: {e}")
