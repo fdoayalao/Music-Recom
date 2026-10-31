@@ -439,6 +439,45 @@ if not engine:
 
 available_years = get_years()
 
+# Reproduciendo Ahora (Visible globalmente en la parte superior)
+if 'spotify_token' in st.session_state and get_currently_playing:
+    try:
+        now_playing = get_currently_playing(st.session_state['spotify_token'])
+        if now_playing:
+            cover_img = now_playing.get('cover_url') or "https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/Spotify_Logo_RGB_Green.png"
+            track_name = now_playing.get('track_name', 'Desconocido')
+            artist_name = now_playing.get('artist_name', 'Artista')
+            album_name = now_playing.get('album_name', '')
+            album_info = f" • {album_name}" if album_name else ""
+            track_url = now_playing.get('url', '#')
+            
+            st.markdown(f"""
+            <a href="{track_url}" target="_blank" style="text-decoration: none; color: inherit; display: block; margin-bottom: 24px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; background: linear-gradient(90deg, rgba(29, 185, 84, 0.15) 0%, rgba(56, 189, 248, 0.08) 100%); border: 1px solid rgba(29, 185, 84, 0.35); border-radius: 12px; padding: 12px 18px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: border-color 0.2s ease;">
+                    <div style="display: flex; align-items: center; gap: 14px;">
+                        <img src="{cover_img}" style="width: 52px; height: 52px; border-radius: 50%; object-fit: cover; border: 2px solid #1DB954; animation: spin 5s linear infinite; flex-shrink: 0;">
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <span style="display: inline-block; width: 8px; height: 8px; background-color: #1DB954; border-radius: 50%; box-shadow: 0 0 8px #1DB954;"></span>
+                                <span style="font-size: 0.72rem; color: #1DB954; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;">Escuchando Ahora</span>
+                            </div>
+                            <div style="font-weight: 700; font-size: 1.1rem; color: #ffffff; margin-top: 2px;">{track_name}</div>
+                            <div style="font-size: 0.88rem; color: #a1a1aa;">{artist_name}{album_info}</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 0.8rem; color: #1DB954; font-weight: 600;">Abrir en Spotify</span>
+                        <span style="color: #1DB954; font-size: 1.1rem;">↗</span>
+                    </div>
+                </div>
+            </a>
+            <style>
+                @keyframes spin {{ 100% {{ transform: rotate(360deg); }} }}
+            </style>
+            """, unsafe_allow_html=True)
+    except Exception as e:
+        print(f"Aviso reproduciendo ahora: {e}")
+
 # Sidebar Navigation
 st.sidebar.image("https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/Spotify_Logo_RGB_Green.png", width=150)
 
@@ -479,24 +518,6 @@ page = st.sidebar.radio("Navegación", ["Recomendador y Playlists", "Estadístic
 st.sidebar.markdown("---")
 
 if page == "Estadísticas":
-    if 'spotify_token' in st.session_state and get_currently_playing:
-        now_playing = get_currently_playing(st.session_state['spotify_token'])
-        if now_playing:
-            st.markdown(f"""
-            <div style="display: flex; align-items: center; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 12px; padding: 12px; margin-bottom: 24px; animation: pulse 2s infinite;">
-                <img src="{now_playing['cover_url']}" style="width: 50px; height: 50px; border-radius: 50%; border: 2px solid #38bdf8; margin-right: 16px; animation: spin 4s linear infinite;">
-                <div>
-                    <div style="font-size: 0.75rem; color: #38bdf8; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">Escuchando Ahora</div>
-                    <div style="font-weight: bold; font-size: 1.1rem; color: white;">{now_playing['track_name']}</div>
-                    <div style="font-size: 0.9rem; color: #a1a1aa;">{now_playing['artist_name']}</div>
-                </div>
-            </div>
-            <style>
-                @keyframes spin {{ 100% {{ transform: rotate(360deg); }} }}
-                @keyframes pulse {{ 0% {{ box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.4); }} 70% {{ box-shadow: 0 0 0 10px rgba(56, 189, 248, 0); }} 100% {{ box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }} }}
-            </style>
-            """, unsafe_allow_html=True)
-
     st.sidebar.markdown("### About")
     st.sidebar.info("Dashboard of your extended Spotify streaming history (>30 seconds).")
 

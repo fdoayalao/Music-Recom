@@ -87,25 +87,32 @@ def ensure_valid_token(token_info=None):
         
     return token_info
 
-def get_currently_playing(token_info):
+def get_currently_playing(token_info=None):
     """
     Returns the currently playing track if any, else None.
     """
+    if not token_info:
+        token_info = get_cached_token()
     valid_token = ensure_valid_token(token_info) or token_info
-    sp = spotipy.Spotify(auth=valid_token['access_token'])
+    if not valid_token or not isinstance(valid_token, dict) or 'access_token' not in valid_token:
+        return None
     try:
+        sp = spotipy.Spotify(auth=valid_token['access_token'])
         current = sp.current_user_playing_track()
         if current and current.get('is_playing') and current.get('item'):
             track = current['item']
+            artists = ", ".join([a['name'] for a in track.get('artists', [])]) if track.get('artists') else 'Artista Desconocido'
+            images = track.get('album', {}).get('images', [])
+            cover_url = images[0]['url'] if images else None
             return {
-                'track_name': track['name'],
-                'artist_name': track['artists'][0]['name'],
-                'album_name': track['album']['name'],
-                'cover_url': track['album']['images'][0]['url'] if track['album']['images'] else None,
-                'url': track['external_urls'].get('spotify', '#')
+                'track_name': track.get('name', 'Desconocido'),
+                'artist_name': artists,
+                'album_name': track.get('album', {}).get('name', ''),
+                'cover_url': cover_url,
+                'url': track.get('external_urls', {}).get('spotify', '#')
             }
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Aviso al obtener reproducción actual: {e}")
     return None
 
 def sync_recently_played_to_db(token_info):
