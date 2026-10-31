@@ -57,11 +57,42 @@ def get_cached_token():
             pass
     return token
 
+def ensure_valid_token(token_info=None):
+    """
+    Verifica si el token de Spotify expiró y lo refresca automáticamente
+    usando el refresh_token, persistiendo la nueva versión en disco y en st.session_state.
+    """
+    auth = get_spotify_oauth()
+    if not token_info:
+        token_info = get_cached_token()
+    if not token_info:
+        return None
+        
+    try:
+        if auth.is_token_expired(token_info):
+            refresh_tok = token_info.get('refresh_token')
+            if refresh_tok:
+                new_token = auth.refresh_access_token(refresh_tok)
+                if new_token:
+                    token_info = new_token
+                    # Ajuste 3: Thread/Session safety - actualizar st.session_state si Streamlit está presente
+                    try:
+                        import streamlit as st
+                        if hasattr(st, 'session_state'):
+                            st.session_state['spotify_token'] = new_token
+                    except Exception:
+                        pass
+    except Exception as e:
+        print(f"Aviso refrescando token de Spotify: {e}")
+        
+    return token_info
+
 def get_currently_playing(token_info):
     """
     Returns the currently playing track if any, else None.
     """
-    sp = spotipy.Spotify(auth=token_info['access_token'])
+    valid_token = ensure_valid_token(token_info) or token_info
+    sp = spotipy.Spotify(auth=valid_token['access_token'])
     try:
         current = sp.current_user_playing_track()
         if current and current.get('is_playing') and current.get('item'):
@@ -79,21 +110,27 @@ def get_currently_playing(token_info):
 
 def sync_recently_played_to_db(token_info):
     """
-    Fetches the 50 most recently played tracks and inserts them into SQLite.
+    Sincroniza las 50 reproducciones más recientes en Supabase de forma atómica y optimizada.
+    Utiliza una única consulta batch para evitar 50 roundtrips de red y normaliza timestamps.
     Returns the number of new tracks added.
     """
     import pandas as pd
     import os
     from sqlalchemy import create_engine, text
     
-    sp = spotipy.Spotify(auth=token_info['access_token'])
+    valid_token = ensure_valid_token(token_info)
+    if not valid_token:
+        return 0
+        
+    sp = spotipy.Spotify(auth=valid_token['access_token'])
     try:
         recent = sp.current_user_recently_played(limit=50)
     except Exception as e:
         print("Error fetching recent tracks:", e)
         return 0
         
-    if not recent or 'items' not in recent:
+    items = recent.get('items', [])
+    if not items:
         return 0
         
     supabase_url = os.getenv("SUPABASE_URL")
@@ -104,43 +141,51 @@ def sync_recently_played_to_db(token_info):
         supabase_url = supabase_url.replace("postgresql://", "postgresql+psycopg2://")
     engine = create_engine(supabase_url)
     
+    parsed_items = []
+    min_ts = None
+    for item in items:
+        played_at_iso = item['played_at']
+        track = item['track']
+        ts = pd.to_datetime(played_at_iso).strftime('%Y-%m-%d %H:%M:%S+00:00')
+        if min_ts is None or ts < min_ts:
+            min_ts = ts
+            
+        parsed_items.append({
+            'ts': ts,
+            'year': pd.to_datetime(played_at_iso).year,
+            'ms_played': track['duration_ms'],
+            'minutes_played': track['duration_ms'] / 60000.0,
+            'hours_played': track['duration_ms'] / 3600000.0,
+            'track_name': track['name'],
+            'artist_name': track['artists'][0]['name'],
+            'album_name': track['album']['name'],
+            'track_uri': track['uri']
+        })
+        
     new_tracks_count = 0
     
     with engine.begin() as conn:
-        for item in recent['items']:
-            played_at_iso = item['played_at']
-            track = item['track']
-            
-            # Convierte el ISO 8601 al formato de base de datos usando pandas para asegurar homogeneidad
-            ts = pd.to_datetime(played_at_iso).strftime('%Y-%m-%d %H:%M:%S+00:00')
-            year = pd.to_datetime(played_at_iso).year
-            
-            track_uri = track['uri']
-            track_name = track['name']
-            artist_name = track['artists'][0]['name']
-            album_name = track['album']['name']
-            
-            # Spotify recently played doesn't return exactly ms_played by the user,
-            # but we use the track's duration since it's fully registered as played.
-            ms_played = track['duration_ms']
-            minutes_played = ms_played / 60000.0
-            hours_played = ms_played / 3600000.0
-            
-            # Check if this exact reproduction already exists
-            exists = conn.execute(text("SELECT COUNT(*) FROM spotify_history WHERE track_uri = :uri AND ts = :ts"), {"uri": track_uri, "ts": ts}).scalar()
-            
-            if not exists:
-                # We must match the schema exactly:
-                # ts, year, ms_played, minutes_played, hours_played, track_name, artist_name, album_name, track_uri
+        # Consulta BATCH única para la ventana de tiempo reciente
+        existing_rows = conn.execute(
+            text("SELECT track_uri, ts FROM spotify_history WHERE ts >= :min_ts"),
+            {"min_ts": min_ts}
+        ).fetchall()
+        
+        # Ajuste 1: Normalizar r[1] con pd.to_datetime(r[1]).strftime('%Y-%m-%d %H:%M:%S+00:00')
+        existing_set = set(
+            (r[0], pd.to_datetime(r[1]).strftime('%Y-%m-%d %H:%M:%S+00:00'))
+            for r in existing_rows if r[0] and r[1]
+        )
+        
+        for item in parsed_items:
+            key = (item['track_uri'], item['ts'])
+            if key not in existing_set:
                 conn.execute(text('''
                     INSERT INTO spotify_history 
                     (ts, year, ms_played, minutes_played, hours_played, track_name, artist_name, album_name, track_uri)
                     VALUES (:ts, :year, :ms_played, :minutes_played, :hours_played, :track_name, :artist_name, :album_name, :track_uri)
-                '''), {
-                    "ts": ts, "year": year, "ms_played": ms_played, "minutes_played": minutes_played, 
-                    "hours_played": hours_played, "track_name": track_name, "artist_name": artist_name, 
-                    "album_name": album_name, "track_uri": track_uri
-                })
+                '''), item)
+                existing_set.add(key)
                 new_tracks_count += 1
                 
     return new_tracks_count

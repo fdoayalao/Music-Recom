@@ -15,7 +15,10 @@ except ImportError:
     get_recommendations = None
 
 try:
-    from spotify_exporter import create_spotify_playlist, get_auth_url, get_token, get_currently_playing, sync_recently_played_to_db, get_cached_token, filter_unsaved_tracks
+    from spotify_exporter import (
+        create_spotify_playlist, get_auth_url, get_token, get_currently_playing,
+        sync_recently_played_to_db, get_cached_token, filter_unsaved_tracks, ensure_valid_token
+    )
 except ImportError:
     create_spotify_playlist = None
     get_auth_url = None
@@ -24,8 +27,10 @@ except ImportError:
     sync_recently_played_to_db = None
     get_cached_token = None
     filter_unsaved_tracks = None
+    ensure_valid_token = None
     
 import zipfile
+import time
 
 # Set up page configuration (needs to be the first Streamlit command)
 st.set_page_config(page_title="My Spotify Stats", page_icon="🎵", layout="wide")
@@ -53,6 +58,29 @@ if 'spotify_token' not in st.session_state and get_cached_token:
     cached = get_cached_token()
     if cached:
         st.session_state['spotify_token'] = cached
+
+# Auto-Sync Inteligente con Cooldown (15 minutos)
+SYNC_COOLDOWN_SECONDS = 15 * 60  # 15 minutos
+
+if 'spotify_token' in st.session_state and sync_recently_played_to_db:
+    # Ajuste 3: Thread/Session safety - asegurar token fresco en sesión
+    valid_token = ensure_valid_token(st.session_state['spotify_token']) if ensure_valid_token else st.session_state['spotify_token']
+    if valid_token:
+        st.session_state['spotify_token'] = valid_token
+        current_time = time.time()
+        last_sync = st.session_state.get('last_sync_timestamp', 0)
+        
+        if (current_time - last_sync) > SYNC_COOLDOWN_SECONDS:
+            try:
+                added = sync_recently_played_to_db(valid_token)
+                st.session_state['last_sync_timestamp'] = current_time
+                st.session_state['last_sync_added'] = added
+                # Ajuste 2: Invalidador de caché y rerun inmediato si se agregaron nuevas reproducciones
+                if added > 0:
+                    st.cache_data.clear()
+                    st.rerun()
+            except Exception as e:
+                print(f"Aviso en auto-sync desatendido de Spotify: {e}")
 
 # Custom CSS for aesthetics
 st.markdown("""
@@ -415,10 +443,23 @@ available_years = get_years()
 st.sidebar.image("https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/Spotify_Logo_RGB_Green.png", width=150)
 
 if 'spotify_token' in st.session_state:
-    if st.sidebar.button("Live Sync"):
+    last_sync = st.session_state.get('last_sync_timestamp')
+    if last_sync:
+        mins_ago = int((time.time() - last_sync) // 60)
+        time_str = "hace un momento" if mins_ago < 1 else f"hace {mins_ago} min"
+        st.sidebar.caption(f"🟢 Sincronizado: {time_str}")
+    else:
+        st.sidebar.caption("🟢 Live Sync activo")
+        
+    if st.sidebar.button("🔄 Live Sync (Forzar)"):
         if sync_recently_played_to_db:
             with st.spinner("Sincronizando con Spotify..."):
-                added = sync_recently_played_to_db(st.session_state['spotify_token'])
+                valid_tok = ensure_valid_token(st.session_state['spotify_token']) if ensure_valid_token else st.session_state['spotify_token']
+                if valid_tok:
+                    st.session_state['spotify_token'] = valid_tok
+                added = sync_recently_played_to_db(valid_tok)
+                st.session_state['last_sync_timestamp'] = time.time()
+                st.session_state['last_sync_added'] = added
                 st.cache_data.clear()
                 st.sidebar.success(f"¡Sincronización completa! {added} nuevas reproducciones agregadas.")
                 st.rerun()
