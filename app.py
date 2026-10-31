@@ -2,6 +2,7 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 import os
+import re
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
@@ -37,7 +38,7 @@ import zipfile
 import time
 
 # Set up page configuration (needs to be the first Streamlit command)
-st.set_page_config(page_title="My Spotify Stats", page_icon="🎵", layout="wide")
+st.set_page_config(page_title="Music Recommender", layout="wide")
 
 # Extraer base de datos si está comprimida (para la nube)
 if not os.path.exists('spotify_data.db') and os.path.exists('spotify_data.zip'):
@@ -508,7 +509,7 @@ st.sidebar.image("https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/Spotif
 # BARRA LATERAL: CONTROL VISIBLE DE SPOTIFY
 # ---------------------------------------------------------------------
 with st.sidebar.container(border=True):
-    st.markdown("<div style='font-size: 0.95rem; font-weight: 700; margin-bottom: 6px;'>🎵 Conexión Spotify</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size: 0.95rem; font-weight: 700; margin-bottom: 6px;'>Conexión Spotify</div>", unsafe_allow_html=True)
 
     auth_manager = get_spotify_oauth() if callable(get_spotify_oauth) else None
     if not auth_manager:
@@ -520,7 +521,7 @@ with st.sidebar.container(border=True):
         if not has_sec:
             missing.append("SPOTIPY_CLIENT_SECRET")
         missing_str = ", ".join(missing) if missing else "credenciales"
-        st.error(f"⚠️ Faltan configurar en Secrets: {missing_str}")
+        st.error(f"Faltan configurar en Secrets: {missing_str}")
     else:
         token = st.session_state.get('spotify_token') or (get_cached_token() if callable(get_cached_token) else None)
         if token:
@@ -528,18 +529,18 @@ with st.sidebar.container(border=True):
 
         if not token:
             auth_url = auth_manager.get_authorize_url()
-            st.caption("⚪ Desconectado")
-            st.link_button("🔌 Vincular Spotify", auth_url, use_container_width=True)
+            st.caption("Desconectado")
+            st.link_button("Conectar Spotify", auth_url, use_container_width=True)
         else:
             last_sync = st.session_state.get('last_sync_timestamp')
             if last_sync:
                 mins = int((time.time() - last_sync) // 60)
                 time_text = "hace un instante" if mins < 1 else f"hace {mins} min"
-                st.caption(f"🟢 Sincronizado: {time_text}")
+                st.caption(f"Sincronizado: {time_text}")
             else:
-                st.caption("🟢 Conectado")
+                st.caption("Conectado")
 
-            if st.button("🔄 Live Sync", use_container_width=True):
+            if st.button("Live Sync", use_container_width=True):
                 with st.spinner("Sincronizando con Spotify..."):
                     try:
                         valid_tok = ensure_valid_token(token) if ensure_valid_token else token
@@ -560,7 +561,7 @@ st.sidebar.header("Filtros Globales")
 period_options = ["All Time"] + [str(y) for y in available_years]
 selected_period = st.sidebar.selectbox("Selecciona un período", period_options)
 
-page = st.sidebar.radio("Navegación", ["Recomendador y Playlists", "Estadísticas", "Diario de Descubrimientos"])
+page = st.sidebar.radio("Navegación", ["Recomendador", "Estadísticas", "Diario"])
 
 if page == "Estadísticas":
     st.sidebar.markdown("### About")
@@ -574,7 +575,7 @@ if page == "Estadísticas":
         st.stop()
 
     # --- Overview Metrics ---
-    st.markdown(f"### 📊 Overview: {selected_period}")
+    st.markdown(f"### Overview: {selected_period}")
     col1, col2, col3, col4 = st.columns(4)
 
     total_hours = df['hours_played'].sum()
@@ -590,12 +591,12 @@ if page == "Estadísticas":
     st.markdown("<br>", unsafe_allow_html=True)
 
     # --- Top 50 Rankings ---
-    st.markdown("### 🏆 Top 50 Rankings")
+    st.markdown("### Top 50 Rankings")
 
     # Exclude "Mocasines" from the rankings (ghost artist)
     ranking_df = df[df['artist_name'].str.lower() != 'mocasines']
 
-    tab1, tab2, tab3 = st.tabs(["🎤 Top 50 Artists", "🎧 Top 50 Songs", "💿 Top 50 Albums"])
+    tab1, tab2, tab3 = st.tabs(["Top Artistas", "Top Canciones", "Top Álbumes"])
 
     with tab1:
         top_artists = ranking_df.groupby('artist_name').agg(
@@ -628,8 +629,8 @@ if page == "Estadísticas":
         top_albums.index = range(1, 51)
         render_glass_table(top_albums)
 
-elif page == "Diario de Descubrimientos":
-    st.markdown('<h2 style="margin-bottom: 24px;">📖 Diario de Descubrimientos</h2>', unsafe_allow_html=True)
+elif page == "Diario":
+    st.markdown('<h2 style="margin-bottom: 24px;">Diario de Descubrimientos</h2>', unsafe_allow_html=True)
     st.markdown("Aquí se guardan para la posteridad todas las recomendaciones exitosas que el Recomendador Inteligente ha generado para ti.")
     
     if engine:
@@ -650,12 +651,15 @@ elif page == "Diario de Descubrimientos":
                     badge = row.get('badge', '')
                     badge_html = ""
                     if badge:
-                        badge_color = "#38bdf8"
-                        if "RECONEXIÓN" in badge: badge_color = "#c084fc"
-                        elif "LADO B" in badge: badge_color = "#f59e0b"
-                        elif "PUNTO CIEGO" in badge: badge_color = "#10b981"
-                        
-                        badge_html = f'<div style="display:inline-block; background-color:{badge_color}15; color:{badge_color}; border: 1px solid {badge_color}50; padding: 4px 10px; border-radius: 20px; font-size: 0.65rem; font-weight: 800; letter-spacing: 0.5px; margin-bottom: 8px;">{badge}</div>'
+                        clean_badge = re.sub(r'[^\w\s-]', '', str(badge)).strip().upper()
+                        if clean_badge:
+                            badge_color = "#38bdf8"
+                            if "RECONEXIÓN" in clean_badge: badge_color = "#c084fc"
+                            elif "LADO B" in clean_badge: badge_color = "#f59e0b"
+                            elif "PUNTO CIEGO" in clean_badge: badge_color = "#10b981"
+                            elif "CURADURÍA" in clean_badge or "UNIVERSAL" in clean_badge: badge_color = "#ec4899"
+                            
+                            badge_html = f'<div style="display:inline-block; background-color:{badge_color}12; color:{badge_color}; border: 1px solid {badge_color}40; padding: 2px 8px; border-radius: 4px; font-size: 0.65rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px;">{clean_badge}</div>'
                     
                     # Convert to local timezone strings or format directly
                     date_str = str(row['created_at']).split('.')[0]
@@ -683,11 +687,11 @@ elif page == "Diario de Descubrimientos":
         except Exception as e:
             st.error(f"Error cargando el diario: {e}")
 
-elif page == "Recomendador y Playlists":
+elif page == "Recomendador":
     has_gemini = os.getenv("GEMINI_API_KEY") or (hasattr(st, 'secrets') and st.secrets.get("GEMINI_API_KEY"))
     has_spotify = os.getenv("SPOTIPY_CLIENT_ID") or (hasattr(st, 'secrets') and st.secrets.get("SPOTIPY_CLIENT_ID"))
     if not has_gemini or not has_spotify:
-        with st.expander("⚠️ Configuración de Credenciales Requerida (Haz click aquí)", expanded=True):
+        with st.expander("Configuración de Credenciales Requerida", expanded=True):
             st.warning("Faltan claves de API en el archivo `.env`.")
             st.markdown("""
             Para que estas funciones operen, debes crear un archivo `.env` en la misma carpeta del script con lo siguiente:
@@ -714,10 +718,10 @@ elif page == "Recomendador y Playlists":
     # Excluir a "Mocasines" de los cálculos de la IA y Gemas
     df = df[df['artist_name'].str.lower() != 'mocasines']
         
-    tabA, tabB = st.tabs(["💎 Gemas Olvidadas", "🤖 Recomendador Orgánico"])
+    tabA, tabB = st.tabs(["Gemas de Catálogo", "Curador IA"])
     
     with tabA:
-        st.subheader("Tus Gemas Olvidadas")
+        st.subheader("Gemas de Catálogo")
         st.write("Canciones que amabas (más de 15 reproducciones) pero que llevas al menos 18 meses sin escuchar.")
         
         # Calculate Gemas Olvidadas
@@ -741,7 +745,7 @@ elif page == "Recomendador y Playlists":
             gemas['Last_Played'] = gemas['Last_Played'].dt.strftime('%Y-%m-%d')
             render_glass_table(gemas[['artist_name', 'track_name', 'Total_Plays', 'Last_Played']])
             
-            if st.button("Crear Playlist de Gemas Olvidadas en Spotify"):
+            if st.button("Crear Playlist de Gemas en Spotify"):
                 if create_spotify_playlist:
                     with st.spinner("Creando playlist... revisa la consola o navegador para autorizar."):
                         tracks_to_send = [{'artist': r['artist_name'], 'track': r['track_name']} for i, r in gemas.iterrows()]
@@ -755,7 +759,7 @@ elif page == "Recomendador y Playlists":
                     st.error("El módulo de exportación de Spotify no está cargado correctamente. Revisa que instalaste spotipy y reinicia la app.")
 
     with tabB:
-        st.subheader("Recomendaciones Orgánicas Multi-Motor")
+        st.subheader("Curador Algorítmico")
         
         rec_mode = st.radio(
             "Modo de Exploración:",
@@ -810,16 +814,16 @@ elif page == "Recomendador y Playlists":
             
             with col_in2:
                 motor_options = {
-                    "Curador Inteligente (Híbrido Universal)": "Universal",
-                    "Last.fm (Conexiones de audiencia y escena)": "Last.fm",
-                    "RYM (Joyas de nicho y aclamación crítica)": "RYM",
-                    "Discogs (Créditos, producción y sonido de estudio)": "Discogs"
+                    "Curador Universal": "Universal",
+                    "Red Last.fm": "Last.fm",
+                    "Nicho Crítico (RYM)": "RYM",
+                    "Créditos y Estudio (Discogs)": "Discogs"
                 }
                 motor_help = (
-                    "✨ Curador Inteligente: Análisis sonoro completo (groove, producción, texturas, dinámicas vocales e influencias) sintetizando lo mejor de todos los enfoques.\n\n"
-                    "🌐 Last.fm: Conexiones de audiencia y escena musical mediante la API oficial de Last.fm.\n\n"
-                    "🧠 RYM: Enfoque en joyas de nicho y aclamación crítica de microgéneros underground.\n\n"
-                    "🎛️ Discogs: Recomendaciones por producción de estudio, ingenieros de sonido, músicos de sesión o sellos discográficos."
+                    "Curador Universal: Análisis sonoro integral (groove, producción, texturas, dinámicas vocales e influencias) sintetizando lo mejor de todos los enfoques.\n\n"
+                    "Red Last.fm: Conexiones de audiencia y escena musical mediante su API oficial.\n\n"
+                    "Nicho Crítico (RYM): Enfoque en joyas de nicho y aclamación crítica de microgéneros underground.\n\n"
+                    "Créditos y Estudio (Discogs): Recomendaciones por producción de estudio, ingenieros de sonido, músicos de sesión o sellos discográficos."
                 )
                 motor_selection = st.selectbox(
                     "Elige el Enfoque (Motor de Recomendación)",
@@ -832,7 +836,7 @@ elif page == "Recomendador y Playlists":
                 with st.expander(f"Ver tu Top {n_selection} de {base_type} ({selected_period})"):
                     render_glass_table(top_n[cols_to_show])
                     
-            btn_generate = st.button("Generar Recomendaciones con Gemini", use_container_width=True)
+            btn_generate = st.button("Generar recomendaciones", use_container_width=True)
             
         if btn_generate:
             if rec_mode == "Por Artista Específico (Semilla)" and not seed_artist.strip():
@@ -1038,15 +1042,15 @@ elif page == "Recomendador y Playlists":
             
             with col_hdr_left:
                 if cur_seed:
-                    st.markdown(f"### ✨ Nuevos Descubrimientos ({len(recs)})\n<div style='color: var(--text-sec); font-size: 0.88rem; margin-top: -6px;'>Para: <b>{cur_seed}</b> · Motor: <b>{motor}</b></div>", unsafe_allow_html=True)
+                    st.markdown(f"### Selección Curada ({len(recs)})\n<div style='color: var(--text-sec); font-size: 0.88rem; margin-top: -6px;'>Para: <b>{cur_seed}</b> · Motor: <b>{motor}</b></div>", unsafe_allow_html=True)
                 else:
-                    st.markdown(f"### ✨ Nuevos Descubrimientos ({len(recs)})\n<div style='color: var(--text-sec); font-size: 0.88rem; margin-top: -6px;'>Motor: <b>{motor}</b></div>", unsafe_allow_html=True)
+                    st.markdown(f"### Selección Curada ({len(recs)})\n<div style='color: var(--text-sec); font-size: 0.88rem; margin-top: -6px;'>Motor: <b>{motor}</b></div>", unsafe_allow_html=True)
                     
             with col_hdr_right:
                 if create_spotify_playlist:
                     if 'spotify_token' not in st.session_state:
                         auth_url = get_auth_url() if callable(get_auth_url) else "#"
-                        st.link_button("🔌 Conectar Spotify para Exportar", auth_url, use_container_width=True)
+                        st.link_button("Conectar Spotify para Exportar", auth_url, use_container_width=True)
                     else:
                         if st.button("Exportar Recomendaciones a Spotify", key="quick_export_spotify", use_container_width=True):
                             with st.spinner("Creando playlist..."):
@@ -1077,13 +1081,15 @@ elif page == "Recomendador y Playlists":
                 
                 badge_html = ""
                 if badge:
-                    badge_color = "#38bdf8"
-                    if "RECONEXIÓN" in badge: badge_color = "#c084fc"
-                    elif "LADO B" in badge: badge_color = "#f59e0b"
-                    elif "PUNTO CIEGO" in badge: badge_color = "#10b981"
-                    elif "CURADURÍA" in badge or "UNIVERSAL" in badge: badge_color = "#ec4899"
-                    
-                    badge_html = f'<div style="display:inline-block; background-color:{badge_color}15; color:{badge_color}; border: 1px solid {badge_color}50; padding: 4px 10px; border-radius: 20px; font-size: 0.65rem; font-weight: 800; letter-spacing: 0.5px; margin-bottom: 8px;">{badge}</div>'
+                    clean_badge = re.sub(r'[^\w\s-]', '', str(badge)).strip().upper()
+                    if clean_badge:
+                        badge_color = "#38bdf8"
+                        if "RECONEXIÓN" in clean_badge: badge_color = "#c084fc"
+                        elif "LADO B" in clean_badge: badge_color = "#f59e0b"
+                        elif "PUNTO CIEGO" in clean_badge: badge_color = "#10b981"
+                        elif "CURADURÍA" in clean_badge or "UNIVERSAL" in clean_badge: badge_color = "#ec4899"
+                        
+                        badge_html = f'<div style="display:inline-block; background-color:{badge_color}12; color:{badge_color}; border: 1px solid {badge_color}40; padding: 2px 8px; border-radius: 4px; font-size: 0.65rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px;">{clean_badge}</div>'
                 
                 cover_img = f'<img src="{cover_url}" style="width: 56px; height: 56px; border-radius: 8px; margin-right: 14px; float: left; object-fit: cover; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">' if cover_url else ''
                 title_display = f'<a href="{spotify_url}" target="_blank" style="color:white; text-decoration:none;">{track} ↗</a>' if spotify_url else track
