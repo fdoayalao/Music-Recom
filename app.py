@@ -440,9 +440,15 @@ if not engine:
 available_years = get_years()
 
 # Reproduciendo Ahora (Visible globalmente en la parte superior)
-if 'spotify_token' in st.session_state and get_currently_playing:
+active_token = st.session_state.get('spotify_token')
+if not active_token and get_cached_token:
+    active_token = get_cached_token()
+    if active_token:
+        st.session_state['spotify_token'] = active_token
+
+if get_currently_playing and active_token:
     try:
-        now_playing = get_currently_playing(st.session_state['spotify_token'])
+        now_playing = get_currently_playing(active_token)
         if now_playing:
             cover_img = now_playing.get('cover_url') or "https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/Spotify_Logo_RGB_Green.png"
             track_name = now_playing.get('track_name', 'Desconocido')
@@ -450,24 +456,48 @@ if 'spotify_token' in st.session_state and get_currently_playing:
             album_name = now_playing.get('album_name', '')
             album_info = f" • {album_name}" if album_name else ""
             track_url = now_playing.get('url', '#')
+            is_playing = now_playing.get('is_playing', False)
+            is_recent = now_playing.get('is_recent', False)
             
+            if is_playing:
+                badge_text = "Escuchando Ahora"
+                badge_color = "#1DB954"
+                spin_style = "animation: spin 5s linear infinite;"
+                dot_shadow = "box-shadow: 0 0 8px #1DB954;"
+                border_color = "rgba(29, 185, 84, 0.4)"
+                bg_gradient = "linear-gradient(90deg, rgba(29, 185, 84, 0.15) 0%, rgba(56, 189, 248, 0.08) 100%)"
+            elif is_recent:
+                badge_text = "Última Reproducción"
+                badge_color = "#38bdf8"
+                spin_style = ""
+                dot_shadow = "box-shadow: 0 0 8px #38bdf8;"
+                border_color = "rgba(56, 189, 248, 0.3)"
+                bg_gradient = "linear-gradient(90deg, rgba(56, 189, 248, 0.12) 0%, rgba(192, 132, 252, 0.08) 100%)"
+            else:
+                badge_text = "En Pausa"
+                badge_color = "#eab308"
+                spin_style = ""
+                dot_shadow = "box-shadow: 0 0 8px #eab308;"
+                border_color = "rgba(234, 179, 8, 0.3)"
+                bg_gradient = "linear-gradient(90deg, rgba(234, 179, 8, 0.12) 0%, rgba(56, 189, 248, 0.08) 100%)"
+
             st.markdown(f"""
             <a href="{track_url}" target="_blank" style="text-decoration: none; color: inherit; display: block; margin-bottom: 24px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; background: linear-gradient(90deg, rgba(29, 185, 84, 0.15) 0%, rgba(56, 189, 248, 0.08) 100%); border: 1px solid rgba(29, 185, 84, 0.35); border-radius: 12px; padding: 12px 18px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: border-color 0.2s ease;">
+                <div style="display: flex; align-items: center; justify-content: space-between; background: {bg_gradient}; border: 1px solid {border_color}; border-radius: 12px; padding: 12px 18px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: border-color 0.2s ease;">
                     <div style="display: flex; align-items: center; gap: 14px;">
-                        <img src="{cover_img}" style="width: 52px; height: 52px; border-radius: 50%; object-fit: cover; border: 2px solid #1DB954; animation: spin 5s linear infinite; flex-shrink: 0;">
+                        <img src="{cover_img}" style="width: 52px; height: 52px; border-radius: 50%; object-fit: cover; border: 2px solid {badge_color}; {spin_style} flex-shrink: 0;">
                         <div>
                             <div style="display: flex; align-items: center; gap: 6px;">
-                                <span style="display: inline-block; width: 8px; height: 8px; background-color: #1DB954; border-radius: 50%; box-shadow: 0 0 8px #1DB954;"></span>
-                                <span style="font-size: 0.72rem; color: #1DB954; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;">Escuchando Ahora</span>
+                                <span style="display: inline-block; width: 8px; height: 8px; background-color: {badge_color}; border-radius: 50%; {dot_shadow}"></span>
+                                <span style="font-size: 0.72rem; color: {badge_color}; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;">{badge_text}</span>
                             </div>
                             <div style="font-weight: 700; font-size: 1.1rem; color: #ffffff; margin-top: 2px;">{track_name}</div>
                             <div style="font-size: 0.88rem; color: #a1a1aa;">{artist_name}{album_info}</div>
                         </div>
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 0.8rem; color: #1DB954; font-weight: 600;">Abrir en Spotify</span>
-                        <span style="color: #1DB954; font-size: 1.1rem;">↗</span>
+                        <span style="font-size: 0.8rem; color: {badge_color}; font-weight: 600;">Abrir en Spotify</span>
+                        <span style="color: {badge_color}; font-size: 1.1rem;">↗</span>
                     </div>
                 </div>
             </a>
@@ -477,34 +507,70 @@ if 'spotify_token' in st.session_state and get_currently_playing:
             """, unsafe_allow_html=True)
     except Exception as e:
         print(f"Aviso reproduciendo ahora: {e}")
+elif not active_token and get_auth_url:
+    st.markdown(f"""
+    <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(29, 185, 84, 0.08); border: 1px dashed rgba(29, 185, 84, 0.4); border-radius: 12px; padding: 12px 18px; margin-bottom: 24px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 1.5rem;">🎵</span>
+            <div>
+                <div style="font-weight: 600; font-size: 0.95rem; color: #ffffff;">Conecta tu cuenta de Spotify</div>
+                <div style="font-size: 0.82rem; color: #a1a1aa;">Para activar la sincronización automática de reproducciones y ver qué estás escuchando en vivo.</div>
+            </div>
+        </div>
+        <a href="{get_auth_url()}" target="_self" style="background-color: #1DB954; color: white; padding: 8px 16px; border-radius: 100px; text-decoration: none; font-weight: 600; font-size: 0.82rem; white-space: nowrap;">🔌 Vincular Spotify</a>
+    </div>
+    """, unsafe_allow_html=True)
 
 # Sidebar Navigation
 st.sidebar.image("https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/Spotify_Logo_RGB_Green.png", width=150)
 
-if 'spotify_token' in st.session_state:
-    last_sync = st.session_state.get('last_sync_timestamp')
-    if last_sync:
-        mins_ago = int((time.time() - last_sync) // 60)
-        time_str = "hace un momento" if mins_ago < 1 else f"hace {mins_ago} min"
-        st.sidebar.caption(f"🟢 Sincronizado: {time_str}")
-    else:
-        st.sidebar.caption("🟢 Live Sync activo")
-        
-    if st.sidebar.button("🔄 Live Sync (Forzar)"):
-        if sync_recently_played_to_db:
-            with st.spinner("Sincronizando con Spotify..."):
-                valid_tok = ensure_valid_token(st.session_state['spotify_token']) if ensure_valid_token else st.session_state['spotify_token']
-                if valid_tok:
-                    st.session_state['spotify_token'] = valid_tok
-                added = sync_recently_played_to_db(valid_tok)
-                st.session_state['last_sync_timestamp'] = time.time()
-                st.session_state['last_sync_added'] = added
-                st.cache_data.clear()
-                st.sidebar.success(f"¡Sincronización completa! {added} nuevas reproducciones agregadas.")
-                st.rerun()
+# Sidebar Spotify Controls: Ambos botones siempre disponibles
+is_connected = bool(st.session_state.get('spotify_token') or active_token)
+if not is_connected and get_cached_token:
+    cached_tok = get_cached_token()
+    if cached_tok:
+        st.session_state['spotify_token'] = cached_tok
+        is_connected = True
+
+# 1. Estado y Botón de Live Sync (Siempre visible)
+last_sync = st.session_state.get('last_sync_timestamp')
+if last_sync:
+    mins_ago = int((time.time() - last_sync) // 60)
+    time_str = "hace un momento" if mins_ago < 1 else f"hace {mins_ago} min"
+    st.sidebar.caption(f"🟢 Sincronizado: {time_str}")
+elif is_connected:
+    st.sidebar.caption("🟢 Live Sync activo")
 else:
-    if get_auth_url:
-        st.sidebar.markdown(f'<a href="{get_auth_url()}" target="_blank" style="display:block; background-color:#1DB954; color:white; padding:10px 15px; border-radius:100px; text-decoration:none; font-weight:bold; text-align:center; font-size:0.9rem;">🔌 Vincular Spotify</a>', unsafe_allow_html=True)
+    st.sidebar.caption("⚪ Live Sync pendiente de conexión")
+
+if st.sidebar.button("🔄 Live Sync", use_container_width=True):
+    tok = st.session_state.get('spotify_token')
+    if not tok and get_cached_token:
+        tok = get_cached_token()
+        if tok:
+            st.session_state['spotify_token'] = tok
+            
+    if tok and sync_recently_played_to_db:
+        with st.spinner("Sincronizando con Spotify..."):
+            valid_tok = ensure_valid_token(tok) if ensure_valid_token else tok
+            if valid_tok:
+                st.session_state['spotify_token'] = valid_tok
+            added = sync_recently_played_to_db(valid_tok)
+            st.session_state['last_sync_timestamp'] = time.time()
+            st.session_state['last_sync_added'] = added
+            st.cache_data.clear()
+            st.sidebar.success(f"¡Sincronizado! {added} nuevas reproducciones agregadas.")
+            st.rerun()
+    else:
+        st.sidebar.warning("Primero vincula tu cuenta de Spotify con el botón de abajo.")
+
+# 2. Botón de Vincular Spotify (Siempre visible)
+if get_auth_url:
+    auth_label = "🔌 Vincular Spotify" if not is_connected else "🔄 Re-vincular Spotify"
+    st.sidebar.markdown(
+        f'<a href="{get_auth_url()}" target="_self" style="display:block; background-color:#1DB954; color:white; padding:9px 14px; border-radius:100px; text-decoration:none; font-weight:bold; text-align:center; font-size:0.85rem; margin-top:6px; margin-bottom:12px; box-shadow: 0 2px 8px rgba(29, 185, 84, 0.3);">{auth_label}</a>',
+        unsafe_allow_html=True
+    )
 
 st.sidebar.markdown("---")
 

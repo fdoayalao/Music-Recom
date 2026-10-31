@@ -43,7 +43,12 @@ def get_token(code):
 
 def get_cached_token():
     auth = get_spotify_oauth()
-    token = auth.get_cached_token()
+    token = None
+    try:
+        token = auth.get_cached_token()
+    except Exception:
+        pass
+        
     if not token:
         try:
             import json
@@ -55,6 +60,18 @@ def get_cached_token():
                         token = data
         except Exception:
             pass
+
+    # Soporte para Streamlit Secrets en la nube
+    if not token:
+        try:
+            import streamlit as st
+            if hasattr(st, 'secrets'):
+                ref_tok = st.secrets.get("SPOTIFY_REFRESH_TOKEN") or st.secrets.get("SPOTIPY_REFRESH_TOKEN")
+                if ref_tok:
+                    token = auth.refresh_access_token(ref_tok)
+        except Exception:
+            pass
+            
     return token
 
 def ensure_valid_token(token_info=None):
@@ -90,6 +107,7 @@ def ensure_valid_token(token_info=None):
 def get_currently_playing(token_info=None):
     """
     Returns the currently playing track if any, else None.
+    Supports active playing, paused playback, and fallback to the last played track.
     """
     if not token_info:
         token_info = get_cached_token()
@@ -99,12 +117,32 @@ def get_currently_playing(token_info=None):
     try:
         sp = spotipy.Spotify(auth=valid_token['access_token'])
         current = sp.current_user_playing_track()
-        if current and current.get('is_playing') and current.get('item'):
+        if current and current.get('item'):
             track = current['item']
             artists = ", ".join([a['name'] for a in track.get('artists', [])]) if track.get('artists') else 'Artista Desconocido'
             images = track.get('album', {}).get('images', [])
             cover_url = images[0]['url'] if images else None
             return {
+                'is_playing': bool(current.get('is_playing')),
+                'is_recent': False,
+                'track_name': track.get('name', 'Desconocido'),
+                'artist_name': artists,
+                'album_name': track.get('album', {}).get('name', ''),
+                'cover_url': cover_url,
+                'url': track.get('external_urls', {}).get('spotify', '#')
+            }
+        
+        # Si no hay canción activa en el reproductor (ej. cerrado o inactivo), traer la última reproducida
+        recent = sp.current_user_recently_played(limit=1)
+        if recent and recent.get('items'):
+            last_item = recent['items'][0]
+            track = last_item.get('track', {})
+            artists = ", ".join([a['name'] for a in track.get('artists', [])]) if track.get('artists') else 'Artista Desconocido'
+            images = track.get('album', {}).get('images', [])
+            cover_url = images[0]['url'] if images else None
+            return {
+                'is_playing': False,
+                'is_recent': True,
                 'track_name': track.get('name', 'Desconocido'),
                 'artist_name': artists,
                 'album_name': track.get('album', {}).get('name', ''),
