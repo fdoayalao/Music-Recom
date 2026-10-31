@@ -443,8 +443,10 @@ available_years = get_years()
 active_token = st.session_state.get('spotify_token')
 if not active_token and get_cached_token:
     active_token = get_cached_token()
-    if active_token:
-        st.session_state['spotify_token'] = active_token
+
+if active_token and ensure_valid_token:
+    active_token = ensure_valid_token(active_token)
+    st.session_state['spotify_token'] = active_token
 
 if get_currently_playing and active_token:
     try:
@@ -508,18 +510,13 @@ if get_currently_playing and active_token:
     except Exception as e:
         print(f"Aviso reproduciendo ahora: {e}")
 elif not active_token and get_auth_url:
-    st.markdown(f"""
-    <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(29, 185, 84, 0.08); border: 1px dashed rgba(29, 185, 84, 0.4); border-radius: 12px; padding: 12px 18px; margin-bottom: 24px;">
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <span style="font-size: 1.5rem;">🎵</span>
-            <div>
-                <div style="font-weight: 600; font-size: 0.95rem; color: #ffffff;">Conecta tu cuenta de Spotify</div>
-                <div style="font-size: 0.82rem; color: #a1a1aa;">Para activar la sincronización automática de reproducciones y ver qué estás escuchando en vivo.</div>
-            </div>
-        </div>
-        <a href="{get_auth_url()}" target="_self" style="background-color: #1DB954; color: white; padding: 8px 16px; border-radius: 100px; text-decoration: none; font-weight: 600; font-size: 0.82rem; white-space: nowrap;">🔌 Vincular Spotify</a>
-    </div>
-    """, unsafe_allow_html=True)
+    auth_url_top = get_auth_url()
+    if auth_url_top:
+        col_banner1, col_banner2 = st.columns([4, 1])
+        with col_banner1:
+            st.info("🎵 Conecta tu cuenta de Spotify para ver qué estás escuchando en vivo y activar Live Sync automático.")
+        with col_banner2:
+            st.link_button("🔌 Vincular Spotify", auth_url_top, use_container_width=True)
 
 # Sidebar Navigation
 st.sidebar.image("https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/Spotify_Logo_RGB_Green.png", width=150)
@@ -564,13 +561,12 @@ if st.sidebar.button("🔄 Live Sync", use_container_width=True):
     else:
         st.sidebar.warning("Primero vincula tu cuenta de Spotify con el botón de abajo.")
 
-# 2. Botón de Vincular Spotify (Siempre visible)
+# 2. Botón de Vincular Spotify (Siempre visible mediante botón nativo)
 if get_auth_url:
-    auth_label = "🔌 Vincular Spotify" if not is_connected else "🔄 Re-vincular Spotify"
-    st.sidebar.markdown(
-        f'<a href="{get_auth_url()}" target="_self" style="display:block; background-color:#1DB954; color:white; padding:9px 14px; border-radius:100px; text-decoration:none; font-weight:bold; text-align:center; font-size:0.85rem; margin-top:6px; margin-bottom:12px; box-shadow: 0 2px 8px rgba(29, 185, 84, 0.3);">{auth_label}</a>',
-        unsafe_allow_html=True
-    )
+    auth_url = get_auth_url()
+    if auth_url:
+        auth_label = "🔌 Vincular Spotify" if not is_connected else "🔄 Re-vincular Spotify"
+        st.sidebar.link_button(auth_label, auth_url, use_container_width=True)
 
 st.sidebar.markdown("---")
 

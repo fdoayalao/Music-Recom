@@ -18,11 +18,22 @@ except ImportError:
 def get_spotify_oauth():
     client_id = os.getenv("SPOTIPY_CLIENT_ID")
     client_secret = os.getenv("SPOTIPY_CLIENT_SECRET")
-    # Usa la URL definida en los secrets (que será la de Streamlit Cloud) o localhost por defecto
-    redirect_uri = os.getenv("SPOTIPY_REDIRECT_URI", "http://localhost:8501")
+    redirect_uri = os.getenv("SPOTIPY_REDIRECT_URI")
+    
+    # Soporte para Streamlit Secrets en la nube
+    try:
+        import streamlit as st
+        if hasattr(st, 'secrets'):
+            client_id = client_id or st.secrets.get("SPOTIPY_CLIENT_ID")
+            client_secret = client_secret or st.secrets.get("SPOTIPY_CLIENT_SECRET")
+            redirect_uri = redirect_uri or st.secrets.get("SPOTIPY_REDIRECT_URI")
+    except Exception:
+        pass
+        
+    redirect_uri = redirect_uri or "http://localhost:8501"
     
     if not client_id or not client_secret:
-        raise ValueError("Faltan las credenciales de Spotify")
+        raise ValueError("Faltan las credenciales de Spotify (SPOTIPY_CLIENT_ID / SPOTIPY_CLIENT_SECRET)")
 
     scope = "playlist-modify-public playlist-modify-private playlist-read-private user-read-recently-played user-read-currently-playing user-library-read"
     
@@ -36,19 +47,63 @@ def get_spotify_oauth():
     )
 
 def get_auth_url():
-    return get_spotify_oauth().get_authorize_url()
+    try:
+        return get_spotify_oauth().get_authorize_url()
+    except Exception as e:
+        print(f"Error generando auth URL: {e}")
+        return None
+
+def save_token_to_db(token_dict):
+    """
+    Persiste el token de Spotify en la tabla app_settings de Supabase
+    para que esté disponible permanentemente en Streamlit Cloud y entre sesiones.
+    """
+    if not token_dict or not isinstance(token_dict, dict):
+        return
+    try:
+        import json
+        from sqlalchemy import create_engine, text
+        supabase_url = os.getenv("SUPABASE_URL")
+        try:
+            import streamlit as st
+            if not supabase_url and hasattr(st, 'secrets'):
+                supabase_url = st.secrets.get("SUPABASE_URL")
+        except Exception:
+            pass
+            
+        if not supabase_url:
+            return
+            
+        if supabase_url.startswith("postgresql://"):
+            supabase_url = supabase_url.replace("postgresql://", "postgresql+psycopg2://")
+            
+        engine = create_engine(supabase_url)
+        val = json.dumps(token_dict)
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE IF NOT EXISTS app_settings (key VARCHAR PRIMARY KEY, value TEXT);"))
+            conn.execute(text("""
+                INSERT INTO app_settings (key, value) 
+                VALUES ('spotify_token', :v) 
+                ON CONFLICT (key) DO UPDATE SET value = :v
+            """), {'v': val})
+    except Exception as e:
+        print(f"Aviso guardando token en DB: {e}")
 
 def get_token(code):
-    return get_spotify_oauth().get_access_token(code, as_dict=True)
+    tok = get_spotify_oauth().get_access_token(code, as_dict=True)
+    if tok:
+        save_token_to_db(tok)
+    return tok
 
 def get_cached_token():
-    auth = get_spotify_oauth()
     token = None
     try:
+        auth = get_spotify_oauth()
         token = auth.get_cached_token()
     except Exception:
         pass
         
+    # 1. Intentar desde archivo local .spotify_cache
     if not token:
         try:
             import json
@@ -61,38 +116,61 @@ def get_cached_token():
         except Exception:
             pass
 
-    # Soporte para Streamlit Secrets en la nube
+    # 2. Intentar desde Streamlit Secrets
     if not token:
         try:
             import streamlit as st
             if hasattr(st, 'secrets'):
                 ref_tok = st.secrets.get("SPOTIFY_REFRESH_TOKEN") or st.secrets.get("SPOTIPY_REFRESH_TOKEN")
                 if ref_tok:
-                    token = auth.refresh_access_token(ref_tok)
+                    token = get_spotify_oauth().refresh_access_token(ref_tok)
         except Exception:
             pass
+
+    # 3. Intentar desde Supabase (persistencia universal para Streamlit Cloud)
+    if not token:
+        try:
+            import json
+            from sqlalchemy import create_engine, text
+            supabase_url = os.getenv("SUPABASE_URL")
+            try:
+                import streamlit as st
+                if not supabase_url and hasattr(st, 'secrets'):
+                    supabase_url = st.secrets.get("SUPABASE_URL")
+            except Exception:
+                pass
+            if supabase_url:
+                if supabase_url.startswith("postgresql://"):
+                    supabase_url = supabase_url.replace("postgresql://", "postgresql+psycopg2://")
+                engine = create_engine(supabase_url)
+                with engine.connect() as conn:
+                    row = conn.execute(text("SELECT value FROM app_settings WHERE key = 'spotify_token'")).fetchone()
+                    if row and row[0]:
+                        token = json.loads(row[0])
+        except Exception as e:
+            print(f"Aviso recuperando token de DB: {e}")
             
     return token
 
 def ensure_valid_token(token_info=None):
     """
     Verifica si el token de Spotify expiró y lo refresca automáticamente
-    usando el refresh_token, persistiendo la nueva versión en disco y en st.session_state.
+    usando el refresh_token, persistiendo la nueva versión en disco, en DB y en st.session_state.
     """
-    auth = get_spotify_oauth()
     if not token_info:
         token_info = get_cached_token()
     if not token_info:
         return None
         
     try:
+        auth = get_spotify_oauth()
         if auth.is_token_expired(token_info):
             refresh_tok = token_info.get('refresh_token')
             if refresh_tok:
                 new_token = auth.refresh_access_token(refresh_tok)
                 if new_token:
                     token_info = new_token
-                    # Ajuste 3: Thread/Session safety - actualizar st.session_state si Streamlit está presente
+                    save_token_to_db(new_token)
                     try:
                         import streamlit as st
                         if hasattr(st, 'session_state'):
