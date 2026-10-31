@@ -17,7 +17,8 @@ except ImportError:
 try:
     from spotify_exporter import (
         create_spotify_playlist, get_auth_url, get_token, get_currently_playing,
-        sync_recently_played_to_db, get_cached_token, filter_unsaved_tracks, ensure_valid_token
+        sync_recently_played_to_db, get_cached_token, filter_unsaved_tracks, ensure_valid_token,
+        get_spotify_oauth
     )
 except ImportError:
     create_spotify_playlist = None
@@ -28,6 +29,7 @@ except ImportError:
     get_cached_token = None
     filter_unsaved_tracks = None
     ensure_valid_token = None
+    get_spotify_oauth = None
     
 import zipfile
 import time
@@ -440,9 +442,10 @@ if not engine:
 available_years = get_years()
 
 # Reproduciendo Ahora (Visible en la parte superior si está vinculado a Spotify)
-if 'spotify_token' in st.session_state and get_currently_playing:
+token_for_player = st.session_state.get('spotify_token') or (get_cached_token() if get_cached_token else None)
+if token_for_player and get_currently_playing:
     try:
-        now_playing = get_currently_playing(st.session_state['spotify_token'])
+        now_playing = get_currently_playing(token_for_player)
         if now_playing:
             cover_img = now_playing.get('cover_url') or "https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/Spotify_Logo_RGB_Green.png"
             track_name = now_playing.get('track_name', 'Desconocido')
@@ -489,30 +492,54 @@ if 'spotify_token' in st.session_state and get_currently_playing:
 # Sidebar Navigation
 st.sidebar.image("https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/Spotify_Logo_RGB_Green.png", width=150)
 
-if 'spotify_token' in st.session_state:
+# ---------------------------------------------------------------------
+# BARRA LATERAL: CONTROL VISIBLE DE SPOTIFY
+# ---------------------------------------------------------------------
+st.sidebar.markdown("---")
+st.sidebar.subheader("🎵 Conexión Spotify")
+
+# 1. Recuperar token de sesión o caché
+token = st.session_state.get('spotify_token')
+if not token and get_cached_token:
+    token = get_cached_token()
+    if token:
+        st.session_state['spotify_token'] = token
+
+# 2. CASO A: NO HAY TOKEN -> BOTÓN VISIBLE DE LOGIN (OBLIGATORIO)
+if not token:
+    try:
+        auth_manager = get_spotify_oauth()
+        auth_url = auth_manager.get_authorize_url()
+        st.sidebar.info("Conecta tu cuenta para sincronizar.")
+        st.sidebar.link_button("🔌 Vincular Spotify", auth_url, use_container_width=True)
+    except Exception as e:
+        st.sidebar.error(f"Faltan credenciales de Spotify: {e}")
+
+# 3. CASO B: HAY TOKEN -> BOTÓN MANUAL LIVE SYNC + ESTADO (OBLIGATORIO)
+else:
     last_sync = st.session_state.get('last_sync_timestamp')
     if last_sync:
-        mins_ago = int((time.time() - last_sync) // 60)
-        time_str = "hace un momento" if mins_ago < 1 else f"hace {mins_ago} min"
-        st.sidebar.caption(f"🟢 Sincronizado: {time_str}")
+        mins = int((time.time() - last_sync) // 60)
+        time_text = "hace un instante" if mins < 1 else f"hace {mins} min"
+        st.sidebar.caption(f"🟢 Sincronizado: {time_text}")
     else:
-        st.sidebar.caption("🟢 Live Sync activo")
-        
-    if st.sidebar.button("Live Sync"):
-        if sync_recently_played_to_db:
-            with st.spinner("Sincronizando con Spotify..."):
-                valid_tok = ensure_valid_token(st.session_state['spotify_token']) if ensure_valid_token else st.session_state['spotify_token']
+        st.sidebar.caption("🟢 Conectado")
+
+    if st.sidebar.button("🔄 Live Sync", use_container_width=True):
+        with st.spinner("Sincronizando con Spotify..."):
+            try:
+                valid_tok = ensure_valid_token(token) if ensure_valid_token else token
                 if valid_tok:
                     st.session_state['spotify_token'] = valid_tok
-                added = sync_recently_played_to_db(valid_tok)
+                    token = valid_tok
+                added = sync_recently_played_to_db(token)
                 st.session_state['last_sync_timestamp'] = time.time()
                 st.session_state['last_sync_added'] = added
                 st.cache_data.clear()
-                st.sidebar.success(f"¡Sincronización completa! {added} nuevas reproducciones agregadas.")
+                st.sidebar.success(f"{added} reproducciones nuevas.")
                 st.rerun()
-else:
-    if get_auth_url:
-        st.sidebar.markdown(f'<a href="{get_auth_url()}" target="_blank" style="display:block; background-color:#1DB954; color:white; padding:10px 15px; border-radius:100px; text-decoration:none; font-weight:bold; text-align:center; font-size:0.9rem;">🔌 Vincular Spotify</a>', unsafe_allow_html=True)
+            except Exception as e:
+                st.sidebar.error(f"Error al sincronizar: {e}")
 
 st.sidebar.markdown("---")
 
