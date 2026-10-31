@@ -18,7 +18,7 @@ try:
     from spotify_exporter import (
         create_spotify_playlist, get_auth_url, get_token, get_currently_playing,
         sync_recently_played_to_db, get_cached_token, filter_unsaved_tracks, ensure_valid_token,
-        get_spotify_oauth
+        get_spotify_oauth, get_env_or_secret
     )
 except Exception as e:
     print(f"Error importing spotify_exporter: {e}")
@@ -31,6 +31,7 @@ except Exception as e:
     filter_unsaved_tracks = None
     ensure_valid_token = None
     get_spotify_oauth = None
+    get_env_or_secret = None
     
 import zipfile
 import time
@@ -501,7 +502,15 @@ st.sidebar.subheader("🎵 Conexión Spotify")
 
 auth_manager = get_spotify_oauth() if callable(get_spotify_oauth) else None
 if not auth_manager:
-    st.sidebar.error("⚠️ Faltan variables de entorno: SPOTIPY_CLIENT_ID, SPOTIPY_CLIENT_SECRET o SPOTIPY_REDIRECT_URI.")
+    missing = []
+    has_cid = get_env_or_secret(["SPOTIPY_CLIENT_ID", "SPOTIFY_CLIENT_ID"]) if callable(get_env_or_secret) else os.getenv("SPOTIPY_CLIENT_ID")
+    has_sec = get_env_or_secret(["SPOTIPY_CLIENT_SECRET", "SPOTIFY_CLIENT_SECRET"]) if callable(get_env_or_secret) else os.getenv("SPOTIPY_CLIENT_SECRET")
+    if not has_cid:
+        missing.append("SPOTIPY_CLIENT_ID")
+    if not has_sec:
+        missing.append("SPOTIPY_CLIENT_SECRET")
+    missing_str = ", ".join(missing) if missing else "credenciales"
+    st.sidebar.error(f"⚠️ Faltan configurar en Secrets: {missing_str}")
 else:
     token = st.session_state.get('spotify_token') or (get_cached_token() if callable(get_cached_token) else None)
     if token:
@@ -669,8 +678,9 @@ elif page == "Diario de Descubrimientos":
             st.error(f"Error cargando el diario: {e}")
 
 elif page == "Recomendador y Playlists":
-    # Credenciales Warning
-    if not os.getenv("GEMINI_API_KEY") or not os.getenv("SPOTIPY_CLIENT_ID"):
+    has_gemini = os.getenv("GEMINI_API_KEY") or (hasattr(st, 'secrets') and st.secrets.get("GEMINI_API_KEY"))
+    has_spotify = os.getenv("SPOTIPY_CLIENT_ID") or (hasattr(st, 'secrets') and st.secrets.get("SPOTIPY_CLIENT_ID"))
+    if not has_gemini or not has_spotify:
         with st.expander("⚠️ Configuración de Credenciales Requerida (Haz click aquí)", expanded=True):
             st.warning("Faltan claves de API en el archivo `.env`.")
             st.markdown("""

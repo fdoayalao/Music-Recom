@@ -15,21 +15,43 @@ except ImportError:
     def is_artist_blocked(c, b):
         return normalize_name(c) in b if b else False
 
-def get_spotify_oauth():
-    client_id = os.getenv("SPOTIPY_CLIENT_ID")
-    client_secret = os.getenv("SPOTIPY_CLIENT_SECRET")
-    redirect_uri = os.getenv("SPOTIPY_REDIRECT_URI")
-    
-    # Soporte para Streamlit Secrets en la nube
+def get_env_or_secret(key_names, default=None):
+    if isinstance(key_names, str):
+        key_names = [key_names]
+        
+    for k in key_names:
+        val = os.getenv(k)
+        if val and str(val).strip() and not str(val).strip().startswith("tu_"):
+            return str(val).strip()
+            
     try:
         import streamlit as st
-        if hasattr(st, 'secrets'):
-            client_id = client_id or st.secrets.get("SPOTIPY_CLIENT_ID")
-            client_secret = client_secret or st.secrets.get("SPOTIPY_CLIENT_SECRET")
-            redirect_uri = redirect_uri or st.secrets.get("SPOTIPY_REDIRECT_URI")
+        for k in key_names:
+            try:
+                if k in st.secrets:
+                    val = st.secrets[k]
+                    if val and str(val).strip() and not str(val).strip().startswith("tu_"):
+                        return str(val).strip()
+            except Exception:
+                pass
+            try:
+                k_low = k.lower()
+                if k_low in st.secrets:
+                    val = st.secrets[k_low]
+                    if val and str(val).strip() and not str(val).strip().startswith("tu_"):
+                        return str(val).strip()
+            except Exception:
+                pass
     except Exception:
         pass
         
+    return default
+
+def get_spotify_oauth():
+    client_id = get_env_or_secret(["SPOTIPY_CLIENT_ID", "SPOTIFY_CLIENT_ID"])
+    client_secret = get_env_or_secret(["SPOTIPY_CLIENT_SECRET", "SPOTIFY_CLIENT_SECRET"])
+    redirect_uri = get_env_or_secret(["SPOTIPY_REDIRECT_URI", "SPOTIFY_REDIRECT_URI"], default="http://localhost:8501")
+    
     if not (client_id and client_secret and redirect_uri):
         return None
 
