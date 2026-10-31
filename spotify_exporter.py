@@ -30,10 +30,8 @@ def get_spotify_oauth():
     except Exception:
         pass
         
-    redirect_uri = redirect_uri or "http://localhost:8501"
-    
-    if not client_id or not client_secret:
-        raise ValueError("Faltan las credenciales de Spotify (SPOTIPY_CLIENT_ID / SPOTIPY_CLIENT_SECRET)")
+    if not (client_id and client_secret and redirect_uri):
+        return None
 
     scope = "playlist-modify-public playlist-modify-private playlist-read-private user-read-recently-played user-read-currently-playing user-library-read"
     
@@ -43,12 +41,15 @@ def get_spotify_oauth():
         redirect_uri=redirect_uri,
         scope=scope,
         open_browser=False,
-        cache_handler=spotipy.cache_handler.CacheFileHandler(cache_path=".spotify_cache")
+        cache_path=".spotify_cache"
     )
 
 def get_auth_url():
+    auth = get_spotify_oauth()
+    if not auth:
+        return None
     try:
-        return get_spotify_oauth().get_authorize_url()
+        return auth.get_authorize_url()
     except Exception as e:
         print(f"Error generando auth URL: {e}")
         return None
@@ -90,18 +91,22 @@ def save_token_to_db(token_dict):
         print(f"Aviso guardando token en DB: {e}")
 
 def get_token(code):
-    tok = get_spotify_oauth().get_access_token(code, as_dict=True)
+    auth = get_spotify_oauth()
+    if not auth:
+        return None
+    tok = auth.get_access_token(code, as_dict=True)
     if tok:
         save_token_to_db(tok)
     return tok
 
 def get_cached_token():
+    auth = get_spotify_oauth()
     token = None
-    try:
-        auth = get_spotify_oauth()
-        token = auth.get_cached_token()
-    except Exception:
-        pass
+    if auth:
+        try:
+            token = auth.get_cached_token()
+        except Exception:
+            pass
         
     # 1. Intentar desde archivo local .spotify_cache
     if not token:
@@ -117,13 +122,13 @@ def get_cached_token():
             pass
 
     # 2. Intentar desde Streamlit Secrets
-    if not token:
+    if not token and auth:
         try:
             import streamlit as st
             if hasattr(st, 'secrets'):
                 ref_tok = st.secrets.get("SPOTIFY_REFRESH_TOKEN") or st.secrets.get("SPOTIPY_REFRESH_TOKEN")
                 if ref_tok:
-                    token = get_spotify_oauth().refresh_access_token(ref_tok)
+                    token = auth.refresh_access_token(ref_tok)
         except Exception:
             pass
 
@@ -164,6 +169,8 @@ def ensure_valid_token(token_info=None):
         
     try:
         auth = get_spotify_oauth()
+        if not auth:
+            return token_info
         if auth.is_token_expired(token_info):
             refresh_tok = token_info.get('refresh_token')
             if refresh_tok:
