@@ -718,7 +718,7 @@ elif page == "Recomendador":
     # Excluir a "Mocasines" de los cálculos de la IA y Gemas
     df = df[df['artist_name'].str.lower() != 'mocasines']
         
-    tabA, tabB = st.tabs(["Gemas de Catálogo", "Curador IA"])
+    tabA, tabB = st.tabs(["Gemas de Catálogo", "Recomendador Spotify"])
     
     with tabA:
         st.subheader("Gemas de Catálogo")
@@ -759,7 +759,7 @@ elif page == "Recomendador":
                     st.error("El módulo de exportación de Spotify no está cargado correctamente. Revisa que instalaste spotipy y reinicia la app.")
 
     with tabB:
-        st.subheader("Curador Algorítmico")
+        st.subheader("Recomendador Spotify")
         
         rec_mode = st.radio(
             "Modo de Exploración:",
