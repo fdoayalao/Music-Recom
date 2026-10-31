@@ -3,6 +3,7 @@ import sqlite3
 import pandas as pd
 import os
 import re
+import urllib.parse
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
@@ -369,6 +370,14 @@ def render_glass_table(df, show_index=True):
     html += '</tbody></table></div>'
     st.markdown(html, unsafe_allow_html=True)
 
+def get_track_spotify_url(track_name, artist_name, track_uri=None):
+    if track_uri and isinstance(track_uri, str) and "spotify:track:" in track_uri:
+        track_id = track_uri.split(":")[-1].strip()
+        if track_id:
+            return f"https://open.spotify.com/track/{track_id}"
+    query = f"{artist_name} {track_name}".strip()
+    return f"https://open.spotify.com/search/{urllib.parse.quote(query)}"
+
 from sqlalchemy import create_engine, text
 
 def get_engine():
@@ -731,7 +740,8 @@ elif page == "Recomendador":
         # Total plays per track
         track_stats = df.groupby(['track_name', 'artist_name']).agg(
             Total_Plays=('ts', 'count'),
-            Last_Played=('ts', 'max')
+            Last_Played=('ts', 'max'),
+            track_uri=('track_uri', lambda s: s.dropna().iloc[0] if ('track_uri' in df.columns and not s.dropna().empty) else None)
         ).reset_index()
         
         gemas = track_stats[(track_stats['Total_Plays'] > 15) & (track_stats['Last_Played'] < cutoff_date)]
@@ -740,6 +750,41 @@ elif page == "Recomendador":
         if gemas.empty:
             st.info("No tienes gemas olvidadas que cumplan este criterio.")
         else:
+            col_rand1, col_rand2 = st.columns([1, 3], vertical_alignment="center")
+            with col_rand1:
+                if st.button("Seleccionar aleatorio", use_container_width=True):
+                    chosen = gemas.sample(n=1).iloc[0]
+                    st.session_state['selected_random_gema'] = {
+                        'track_name': chosen['track_name'],
+                        'artist_name': chosen['artist_name'],
+                        'total_plays': int(chosen['Total_Plays']),
+                        'last_played': chosen['Last_Played'].strftime('%Y-%m-%d'),
+                        'track_uri': chosen.get('track_uri')
+                    }
+
+            if 'selected_random_gema' in st.session_state:
+                rand_item = st.session_state['selected_random_gema']
+                spotify_url = get_track_spotify_url(
+                    rand_item['track_name'],
+                    rand_item['artist_name'],
+                    rand_item.get('track_uri')
+                )
+                with st.container(border=True):
+                    col_info, col_btn = st.columns([3, 1], vertical_alignment="center")
+                    with col_info:
+                        st.markdown(
+                            f"<div style='font-size: 1.15rem; font-weight: 700; color: var(--text-main);'>{rand_item['track_name']}</div>"
+                            f"<div style='font-size: 0.95rem; color: var(--text-sec); margin-top: 2px;'>{rand_item['artist_name']}</div>"
+                            f"<div style='font-size: 0.8rem; color: var(--accent); margin-top: 6px; font-weight: 600;'>"
+                            f"Escuchada {rand_item['total_plays']} veces · Última vez: {rand_item['last_played']}"
+                            f"</div>",
+                            unsafe_allow_html=True
+                        )
+                    with col_btn:
+                        st.link_button("Abrir en Spotify ↗", spotify_url, use_container_width=True)
+
+            st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
+
             gemas.index = range(1, len(gemas) + 1)
             # Formatear la fecha para que no salga +00:00
             gemas['Last_Played'] = gemas['Last_Played'].dt.strftime('%Y-%m-%d')
