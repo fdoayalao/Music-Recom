@@ -696,7 +696,7 @@ elif page == "Diario":
         except Exception as e:
             st.error(f"Error cargando el diario: {e}")
 
-elif page == "Recomendador":
+else:  # Recomendador (incluye fallback seguro para sesiones previas)
     has_gemini = os.getenv("GEMINI_API_KEY") or (hasattr(st, 'secrets') and st.secrets.get("GEMINI_API_KEY"))
     has_spotify = os.getenv("SPOTIPY_CLIENT_ID") or (hasattr(st, 'secrets') and st.secrets.get("SPOTIPY_CLIENT_ID"))
     if not has_gemini or not has_spotify:
@@ -737,14 +737,14 @@ elif page == "Recomendador":
         max_date = df['ts'].max()
         cutoff_date = max_date - pd.DateOffset(months=18)
         
-        # Total plays per track
+        # Total plays per track (optimizado con 'first' para velocidad instantánea)
         track_stats = df.groupby(['track_name', 'artist_name']).agg(
             Total_Plays=('ts', 'count'),
             Last_Played=('ts', 'max'),
-            track_uri=('track_uri', lambda s: s.dropna().iloc[0] if ('track_uri' in df.columns and not s.dropna().empty) else None)
+            track_uri=('track_uri', 'first')
         ).reset_index()
         
-        gemas = track_stats[(track_stats['Total_Plays'] > 15) & (track_stats['Last_Played'] < cutoff_date)]
+        gemas = track_stats[(track_stats['Total_Plays'] > 15) & (track_stats['Last_Played'] < cutoff_date)].copy()
         gemas = gemas.sort_values(by='Total_Plays', ascending=False)
         
         if gemas.empty:
@@ -754,11 +754,13 @@ elif page == "Recomendador":
             with col_rand1:
                 if st.button("Seleccionar aleatorio", use_container_width=True):
                     chosen = gemas.sample(n=1).iloc[0]
+                    lp_val = chosen['Last_Played']
+                    lp_str = lp_val.strftime('%Y-%m-%d') if hasattr(lp_val, 'strftime') else str(lp_val).split(' ')[0]
                     st.session_state['selected_random_gema'] = {
                         'track_name': chosen['track_name'],
                         'artist_name': chosen['artist_name'],
                         'total_plays': int(chosen['Total_Plays']),
-                        'last_played': chosen['Last_Played'].strftime('%Y-%m-%d'),
+                        'last_played': lp_str,
                         'track_uri': chosen.get('track_uri')
                     }
 
@@ -785,10 +787,13 @@ elif page == "Recomendador":
 
             st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
 
-            gemas.index = range(1, len(gemas) + 1)
+            gemas_display = gemas.head(50).copy()
+            gemas_display.index = range(1, len(gemas_display) + 1)
             # Formatear la fecha para que no salga +00:00
-            gemas['Last_Played'] = gemas['Last_Played'].dt.strftime('%Y-%m-%d')
-            render_glass_table(gemas[['artist_name', 'track_name', 'Total_Plays', 'Last_Played']])
+            gemas_display['Last_Played'] = gemas_display['Last_Played'].dt.strftime('%Y-%m-%d')
+            if len(gemas) > 50:
+                st.caption(f"Mostrando las 50 principales de {len(gemas):,} gemas encontradas.")
+            render_glass_table(gemas_display[['artist_name', 'track_name', 'Total_Plays', 'Last_Played']])
             
             if st.button("Crear Playlist de Gemas en Spotify"):
                 if create_spotify_playlist:
