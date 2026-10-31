@@ -148,36 +148,37 @@ st.markdown("""
         font-weight: 600;
     }
 
-    /* Diseño de Tarjetas de Recomendación (Glassmorphism) */
+    /* Diseño de Tarjetas de Recomendación (Glassmorphism Suave) */
     .rec-card {
         background: var(--bg-card);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        border: 1px solid var(--border-color);
-        padding: 24px;
-        margin-bottom: 24px;
-        border-radius: 16px;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        padding: 20px 24px;
+        margin-bottom: 20px;
+        border-radius: 14px;
         position: relative;
-        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-        transition: transform 0.3s ease, border-color 0.3s ease;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
     }
     .rec-card:hover {
-        transform: translateY(-4px);
-        border-color: rgba(56, 189, 248, 0.3);
+        transform: translateY(-3px);
+        border-color: rgba(56, 189, 248, 0.25);
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
     }
     .rec-number {
         position: absolute;
-        top: 24px;
+        top: 20px;
         right: 24px;
         font-family: 'Inter', sans-serif;
         font-weight: 800;
-        color: rgba(255, 255, 255, 0.1);
-        font-size: 2rem;
+        color: rgba(255, 255, 255, 0.08);
+        font-size: 1.8rem;
         line-height: 1;
     }
     .rec-title {
         font-family: 'Inter', sans-serif;
-        font-size: 1.5rem;
+        font-size: 1.4rem;
         font-weight: 700;
         margin-bottom: 4px;
         color: var(--text-main);
@@ -185,10 +186,10 @@ st.markdown("""
     }
     .rec-artist {
         font-family: 'Inter', sans-serif;
-        font-size: 1.1rem;
+        font-size: 1.05rem;
         font-weight: 500;
         color: var(--text-sec);
-        margin-bottom: 16px;
+        margin-bottom: 14px;
     }
     .rec-pills {
         font-family: 'Inter', sans-serif;
@@ -197,21 +198,30 @@ st.markdown("""
         text-transform: uppercase;
         letter-spacing: 1.5px;
         color: var(--accent);
-        margin-bottom: 16px;
+        margin-bottom: 12px;
         display: inline-block;
-        background: rgba(56, 189, 248, 0.1);
-        padding: 4px 10px;
+        background: rgba(56, 189, 248, 0.08);
+        padding: 3px 10px;
         border-radius: 100px;
     }
     .rec-reason {
         background: rgba(255, 255, 255, 0.02);
         border-left: 2px solid var(--accent-alt);
-        padding: 16px;
-        border-radius: 0 8px 8px 0;
+        padding: 10px 14px;
+        border-radius: 0 6px 6px 0;
         font-family: 'Inter', sans-serif;
         color: #e4e4e7;
-        font-size: 0.95rem;
-        line-height: 1.6;
+        font-size: 0.9rem;
+        line-height: 1.55;
+    }
+
+    /* Contenedores con borde (st.container(border=True)) estilo Glassmorphism */
+    div[data-testid="stVerticalBlockBorderWrapper"] > div {
+        border-color: var(--border-color) !important;
+        background: var(--bg-card) !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+        border-radius: 14px !important;
     }
 
     /* Botones generales (incluye Spotify) */
@@ -497,64 +507,60 @@ st.sidebar.image("https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/Spotif
 # ---------------------------------------------------------------------
 # BARRA LATERAL: CONTROL VISIBLE DE SPOTIFY
 # ---------------------------------------------------------------------
-st.sidebar.markdown("---")
-st.sidebar.subheader("🎵 Conexión Spotify")
+with st.sidebar.container(border=True):
+    st.markdown("<div style='font-size: 0.95rem; font-weight: 700; margin-bottom: 6px;'>🎵 Conexión Spotify</div>", unsafe_allow_html=True)
 
-auth_manager = get_spotify_oauth() if callable(get_spotify_oauth) else None
-if not auth_manager:
-    missing = []
-    has_cid = get_env_or_secret(["SPOTIPY_CLIENT_ID", "SPOTIFY_CLIENT_ID"]) if callable(get_env_or_secret) else os.getenv("SPOTIPY_CLIENT_ID")
-    has_sec = get_env_or_secret(["SPOTIPY_CLIENT_SECRET", "SPOTIFY_CLIENT_SECRET"]) if callable(get_env_or_secret) else os.getenv("SPOTIPY_CLIENT_SECRET")
-    if not has_cid:
-        missing.append("SPOTIPY_CLIENT_ID")
-    if not has_sec:
-        missing.append("SPOTIPY_CLIENT_SECRET")
-    missing_str = ", ".join(missing) if missing else "credenciales"
-    st.sidebar.error(f"⚠️ Faltan configurar en Secrets: {missing_str}")
-else:
-    token = st.session_state.get('spotify_token') or (get_cached_token() if callable(get_cached_token) else None)
-    if token:
-        st.session_state['spotify_token'] = token
-
-    if not token:
-        auth_url = auth_manager.get_authorize_url()
-        st.sidebar.info("Conecta tu cuenta para sincronizar.")
-        st.sidebar.link_button("🔌 Vincular Spotify", auth_url, use_container_width=True)
+    auth_manager = get_spotify_oauth() if callable(get_spotify_oauth) else None
+    if not auth_manager:
+        missing = []
+        has_cid = get_env_or_secret(["SPOTIPY_CLIENT_ID", "SPOTIFY_CLIENT_ID"]) if callable(get_env_or_secret) else os.getenv("SPOTIPY_CLIENT_ID")
+        has_sec = get_env_or_secret(["SPOTIPY_CLIENT_SECRET", "SPOTIFY_CLIENT_SECRET"]) if callable(get_env_or_secret) else os.getenv("SPOTIPY_CLIENT_SECRET")
+        if not has_cid:
+            missing.append("SPOTIPY_CLIENT_ID")
+        if not has_sec:
+            missing.append("SPOTIPY_CLIENT_SECRET")
+        missing_str = ", ".join(missing) if missing else "credenciales"
+        st.error(f"⚠️ Faltan configurar en Secrets: {missing_str}")
     else:
-        last_sync = st.session_state.get('last_sync_timestamp')
-        if last_sync:
-            mins = int((time.time() - last_sync) // 60)
-            time_text = "hace un instante" if mins < 1 else f"hace {mins} min"
-            st.sidebar.caption(f"🟢 Sincronizado: {time_text}")
+        token = st.session_state.get('spotify_token') or (get_cached_token() if callable(get_cached_token) else None)
+        if token:
+            st.session_state['spotify_token'] = token
+
+        if not token:
+            auth_url = auth_manager.get_authorize_url()
+            st.caption("⚪ Desconectado")
+            st.link_button("🔌 Vincular Spotify", auth_url, use_container_width=True)
         else:
-            st.sidebar.caption("🟢 Conectado")
+            last_sync = st.session_state.get('last_sync_timestamp')
+            if last_sync:
+                mins = int((time.time() - last_sync) // 60)
+                time_text = "hace un instante" if mins < 1 else f"hace {mins} min"
+                st.caption(f"🟢 Sincronizado: {time_text}")
+            else:
+                st.caption("🟢 Conectado")
 
-        if st.sidebar.button("🔄 Live Sync", use_container_width=True):
-            with st.spinner("Sincronizando con Spotify..."):
-                try:
-                    valid_tok = ensure_valid_token(token) if ensure_valid_token else token
-                    if valid_tok:
-                        st.session_state['spotify_token'] = valid_tok
-                        token = valid_tok
-                    added = sync_recently_played_to_db(token)
-                    st.session_state['last_sync_timestamp'] = time.time()
-                    st.session_state['last_sync_added'] = added
-                    st.cache_data.clear()
-                    st.sidebar.success(f"{added} reproducciones nuevas.")
-                    st.rerun()
-                except Exception as e:
-                    st.sidebar.error(f"Error al sincronizar: {e}")
-
-st.sidebar.markdown("---")
+            if st.button("🔄 Live Sync", use_container_width=True):
+                with st.spinner("Sincronizando con Spotify..."):
+                    try:
+                        valid_tok = ensure_valid_token(token) if ensure_valid_token else token
+                        if valid_tok:
+                            st.session_state['spotify_token'] = valid_tok
+                            token = valid_tok
+                        added = sync_recently_played_to_db(token)
+                        st.session_state['last_sync_timestamp'] = time.time()
+                        st.session_state['last_sync_added'] = added
+                        st.cache_data.clear()
+                        st.success(f"{added} reproducciones nuevas.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al sincronizar: {e}")
 
 # Global Filters
 st.sidebar.header("Filtros Globales")
 period_options = ["All Time"] + [str(y) for y in available_years]
 selected_period = st.sidebar.selectbox("Selecciona un período", period_options)
-st.sidebar.markdown("---")
 
 page = st.sidebar.radio("Navegación", ["Recomendador y Playlists", "Estadísticas", "Diario de Descubrimientos"])
-st.sidebar.markdown("---")
 
 if page == "Estadísticas":
     st.sidebar.markdown("### About")
@@ -761,62 +767,74 @@ elif page == "Recomendador y Playlists":
         trend_df = None
         base_type = "Artistas"
         seed_artist = ""
+        cols_to_show = []
+        n_selection = 15
         
-        if rec_mode == "Mi Perfil y Tendencias":
-            col1, col2 = st.columns(2)
-            with col1:
-                base_type = st.selectbox("Basar recomendaciones en:", ["Artistas", "Canciones", "Álbumes"])
-            with col2:
-                n_selection = st.selectbox("Cantidad a analizar (N):", [15, 30, 50, 100])
+        with st.container(border=True):
+            col_in1, col_in2 = st.columns(2)
             
-            if base_type == "Artistas":
-                grouped = df.groupby('artist_name').agg(
-                    Play_Count=('ts', 'count')
-                ).reset_index()
-                top_n = grouped.sort_values(by='Play_Count', ascending=False).head(n_selection)
-                cols_to_show = ['artist_name', 'Play_Count']
-            elif base_type == "Canciones":
-                grouped = df.groupby(['track_name', 'artist_name']).agg(
-                    Play_Count=('ts', 'count')
-                ).reset_index()
-                top_n = grouped.sort_values(by='Play_Count', ascending=False).head(n_selection)
-                cols_to_show = ['track_name', 'artist_name', 'Play_Count']
-            else: # Álbumes
-                grouped = df.groupby(['album_name', 'artist_name']).agg(
-                    Play_Count=('ts', 'count')
-                ).reset_index()
-                top_n = grouped.sort_values(by='Play_Count', ascending=False).head(n_selection)
-                cols_to_show = ['album_name', 'artist_name', 'Play_Count']
-                
-            # Hacer que el índice sea un ranking (1, 2, 3...)
-            top_n.index = range(1, len(top_n) + 1)
-                
-            with st.expander(f"Ver tu Top {n_selection} de {base_type} ({selected_period})"):
-                render_glass_table(top_n[cols_to_show])
-        else:
-            seed_artist = st.text_input(
-                "Artista Semilla / Referencia:",
-                placeholder="Ej: Tom Misch, Khruangbin, Men I Trust, BADBADNOTGOOD, Jordan Rakei...",
-                help="Ingresa el nombre de cualquier artista para descubrir 10 canciones afines a su sonido que nunca hayas escuchado."
-            )
+            with col_in1:
+                if rec_mode == "Mi Perfil y Tendencias":
+                    sub_c1, sub_c2 = st.columns(2)
+                    with sub_c1:
+                        base_type = st.selectbox("Basar recomendaciones en:", ["Artistas", "Canciones", "Álbumes"])
+                    with sub_c2:
+                        n_selection = st.selectbox("Cantidad a analizar (N):", [15, 30, 50, 100])
+                    
+                    if base_type == "Artistas":
+                        grouped = df.groupby('artist_name').agg(
+                            Play_Count=('ts', 'count')
+                        ).reset_index()
+                        top_n = grouped.sort_values(by='Play_Count', ascending=False).head(n_selection)
+                        cols_to_show = ['artist_name', 'Play_Count']
+                    elif base_type == "Canciones":
+                        grouped = df.groupby(['track_name', 'artist_name']).agg(
+                            Play_Count=('ts', 'count')
+                        ).reset_index()
+                        top_n = grouped.sort_values(by='Play_Count', ascending=False).head(n_selection)
+                        cols_to_show = ['track_name', 'artist_name', 'Play_Count']
+                    else: # Álbumes
+                        grouped = df.groupby(['album_name', 'artist_name']).agg(
+                            Play_Count=('ts', 'count')
+                        ).reset_index()
+                        top_n = grouped.sort_values(by='Play_Count', ascending=False).head(n_selection)
+                        cols_to_show = ['album_name', 'artist_name', 'Play_Count']
+                        
+                    top_n.index = range(1, len(top_n) + 1)
+                else:
+                    seed_artist = st.text_input(
+                        "Artista Semilla / Referencia:",
+                        placeholder="Ej: Tom Misch, Khruangbin, Men I Trust, BADBADNOTGOOD, Jordan Rakei...",
+                        help="Ingresa el nombre de cualquier artista para descubrir 10 canciones afines a su sonido que nunca hayas escuchado."
+                    )
             
-        motor_options = {
-            "Curador Inteligente (Híbrido Universal)": "Universal",
-            "Last.fm (Conexiones de audiencia y escena)": "Last.fm",
-            "RYM (Joyas de nicho y aclamación crítica)": "RYM",
-            "Discogs (Créditos, producción y sonido de estudio)": "Discogs"
-        }
-        motor_selection = st.selectbox("Elige el Enfoque (Motor de Recomendación)", list(motor_options.keys()))
-        motor = motor_options[motor_selection]
-        
-        st.info({
-            "Universal": "✨ **Curador Inteligente:** Análisis sonoro completo (groove, producción, texturas, dinámicas vocales e influencias) sintetizando lo mejor de todos los enfoques.",
-            "Last.fm": "🌐 **Last.fm:** Conexiones de audiencia y escena musical mediante la API oficial de Last.fm.",
-            "RYM": "🧠 **RYM:** Enfoque en joyas de nicho y aclamación crítica de microgéneros underground.",
-            "Discogs": "🎛️ **Discogs:** Recomendaciones por producción de estudio, ingenieros de sonido, músicos de sesión o sellos discográficos."
-        }[motor])
-        
-        if st.button("Generar Recomendaciones con Gemini"):
+            with col_in2:
+                motor_options = {
+                    "Curador Inteligente (Híbrido Universal)": "Universal",
+                    "Last.fm (Conexiones de audiencia y escena)": "Last.fm",
+                    "RYM (Joyas de nicho y aclamación crítica)": "RYM",
+                    "Discogs (Créditos, producción y sonido de estudio)": "Discogs"
+                }
+                motor_help = (
+                    "✨ Curador Inteligente: Análisis sonoro completo (groove, producción, texturas, dinámicas vocales e influencias) sintetizando lo mejor de todos los enfoques.\n\n"
+                    "🌐 Last.fm: Conexiones de audiencia y escena musical mediante la API oficial de Last.fm.\n\n"
+                    "🧠 RYM: Enfoque en joyas de nicho y aclamación crítica de microgéneros underground.\n\n"
+                    "🎛️ Discogs: Recomendaciones por producción de estudio, ingenieros de sonido, músicos de sesión o sellos discográficos."
+                )
+                motor_selection = st.selectbox(
+                    "Elige el Enfoque (Motor de Recomendación)",
+                    list(motor_options.keys()),
+                    help=motor_help
+                )
+                motor = motor_options[motor_selection]
+            
+            if rec_mode == "Mi Perfil y Tendencias" and top_n is not None:
+                with st.expander(f"Ver tu Top {n_selection} de {base_type} ({selected_period})"):
+                    render_glass_table(top_n[cols_to_show])
+                    
+            btn_generate = st.button("Generar Recomendaciones con Gemini", use_container_width=True)
+            
+        if btn_generate:
             if rec_mode == "Por Artista Específico (Semilla)" and not seed_artist.strip():
                 st.warning("Por favor ingresa el nombre de un artista semilla antes de generar recomendaciones.")
             elif get_recommendations:
@@ -1010,15 +1028,46 @@ elif page == "Recomendador y Playlists":
             else:
                 st.error("Módulo de recomendaciones no disponible. Faltan librerías.")
                 
-        if 'current_recs' in st.session_state:
+        if 'current_recs' in st.session_state and st.session_state['current_recs']:
             motor = st.session_state.get('current_motor', '')
             cur_seed = st.session_state.get('current_seed_artist')
-            if cur_seed:
-                st.markdown(f"### Resultados para *{cur_seed}* (Motor: {motor})")
-            else:
-                st.markdown(f"### Resultados (Motor: {motor})")
+            recs = st.session_state.get('current_recs', [])
+            
+            st.markdown("<div style='margin-top: 24px;'></div>", unsafe_allow_html=True)
+            col_hdr_left, col_hdr_right = st.columns([3, 2], vertical_alignment="center")
+            
+            with col_hdr_left:
+                if cur_seed:
+                    st.markdown(f"### ✨ Nuevos Descubrimientos ({len(recs)})\n<div style='color: var(--text-sec); font-size: 0.88rem; margin-top: -6px;'>Para: <b>{cur_seed}</b> · Motor: <b>{motor}</b></div>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"### ✨ Nuevos Descubrimientos ({len(recs)})\n<div style='color: var(--text-sec); font-size: 0.88rem; margin-top: -6px;'>Motor: <b>{motor}</b></div>", unsafe_allow_html=True)
+                    
+            with col_hdr_right:
+                if create_spotify_playlist:
+                    if 'spotify_token' not in st.session_state:
+                        auth_url = get_auth_url() if callable(get_auth_url) else "#"
+                        st.link_button("🔌 Conectar Spotify para Exportar", auth_url, use_container_width=True)
+                    else:
+                        if st.button("Exportar Recomendaciones a Spotify", key="quick_export_spotify", use_container_width=True):
+                            with st.spinner("Creando playlist..."):
+                                try:
+                                    m = st.session_state.get('current_motor', '')
+                                    cur_seed = st.session_state.get('current_seed_artist')
+                                    if cur_seed:
+                                        p_name = f"Descubrimientos: {cur_seed.strip()}"
+                                        p_desc = f"Descubrimientos musicales afines a {cur_seed.strip()} generados por IA."
+                                    else:
+                                        p_name = f"Recomendaciones {m}"
+                                        p_desc = f"Descubrimientos generados por IA usando el motor de {m}."
+                                    url = create_spotify_playlist(p_name, p_desc, recs, st.session_state['spotify_token'], motor=m)
+                                    if url:
+                                        st.success(f"¡Playlist actualizada con éxito en Spotify! [Abrir '{p_name}']({url})")
+                                except Exception as e:
+                                    st.error(f"Error exportando a Spotify: {e}")
+                                    
+            st.markdown("<div style='margin-bottom: 16px;'></div>", unsafe_allow_html=True)
                 
-            for idx, rec in enumerate(st.session_state['current_recs']):
+            for idx, rec in enumerate(recs):
                 artist = rec.get('artist', 'Desconocido')
                 track = rec.get('item', 'Desconocido')
                 reason = rec.get('reason', '')
@@ -1059,26 +1108,3 @@ elif page == "Recomendador y Playlists":
                 </div>
                 """
                 st.markdown(card_html, unsafe_allow_html=True)
-                
-        if create_spotify_playlist:
-            if 'spotify_token' not in st.session_state:
-                auth_url = get_auth_url()
-                st.warning("Debes conectar tu cuenta de Spotify para poder crear y exportar playlists.")
-                st.link_button("Conectar con Spotify", auth_url)
-            else:
-                if st.button("Exportar Recomendaciones a Spotify"):
-                    with st.spinner("Creando playlist..."):
-                        try:
-                            m = st.session_state.get('current_motor', '')
-                            cur_seed = st.session_state.get('current_seed_artist')
-                            if cur_seed:
-                                p_name = f"Descubrimientos: {cur_seed.strip()}"
-                                p_desc = f"Descubrimientos musicales afines a {cur_seed.strip()} generados por IA."
-                            else:
-                                p_name = f"Recomendaciones {m}"
-                                p_desc = f"Descubrimientos generados por IA usando el motor de {m}."
-                            url = create_spotify_playlist(p_name, p_desc, st.session_state['current_recs'], st.session_state['spotify_token'], motor=m)
-                            if url:
-                                st.success(f"¡Playlist actualizada con éxito en Spotify! [Abrir '{p_name}']({url})")
-                        except Exception as e:
-                            st.error(f"Error exportando a Spotify: {e}")
